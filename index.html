@@ -21,33 +21,22 @@
 
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; }
-        
-        /* Karty skoczków */
         .jumper-card { transition: all 0.2s; }
         .jumper-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .jumper-card.disabled { opacity: 0.5; filter: grayscale(100%); cursor: not-allowed; transform: none; box-shadow: none; }
         .jumper-card.my-turn:hover { border-color: #3b82f6; ring: 2px solid #3b82f6; }
-        
-        /* Aktywna tura w koszyku */
         .team-box { transition: all 0.3s ease-in-out; }
         .active-turn { ring: 4px solid #3b82f6; transform: scale(1.02); z-index: 10; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        
-        /* Ładowanie */
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* Pasek przewijania */
         .jumper-list::-webkit-scrollbar { width: 8px; }
         .jumper-list::-webkit-scrollbar-track { background: #f1f1f1; }
         .jumper-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .jumper-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-        /* Animacja Toast (Powiadomienia) */
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .toast { animation: slideIn 0.3s ease-out forwards; }
+        .request-alert { animation: pulse-border 2s infinite; }
+        @keyframes pulse-border { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
     </style>
 </head>
 <body>
@@ -56,17 +45,44 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // --- MIEJSCE NA TWOJĄ KONFIGURACJĘ (DLA GITHUB) ---
+        // Jeśli chcesz wrzucić stronę na własny serwer, wklej tutaj obiekt z konsoli Firebase.
+        // Powinien wyglądać tak: const customConfig = { apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
+    authDomain: "skoki-draft.firebaseapp.com",
+    projectId: "skoki-draft",
+    storageBucket: "skoki-draft.firebasestorage.app",
+    messagingSenderId: "924643436062",
+    appId: "1:924643436062:web:075af64db6eb796175f00f",
+    measurementId: "G-3YM0YNPRW3"
+  }; 
+
+        // Logika wyboru konfiguracji (Automatyczna)
+        let firebaseConfig;
+        let currentAppId = 'default-app-id';
+
+        if (customConfig) {
+            // Użyj własnej konfiguracji (Dla GitHub/Własnego hostingu)
+            firebaseConfig = customConfig;
+            currentAppId = 'custom-app'; // Używamy stałego ID dla własnej bazy
+        } else if (typeof __firebase_config !== 'undefined') {
+            // Użyj konfiguracji środowiska testowego (Dla podglądu tutaj)
+            firebaseConfig = JSON.parse(__firebase_config);
+            if (typeof __app_id !== 'undefined') currentAppId = __app_id;
+        } else {
+            console.error("Brak konfiguracji Firebase! Uzupełnij zmienną 'customConfig' w kodzie.");
+        }
+
+        // Inicjalizacja
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
+        // Eksport do globalnego scope dla Reacta
         window.db = db;
         window.auth = auth;
-        window.appId = appId;
+        window.appId = currentAppId;
         window.signInAnonymously = signInAnonymously;
         window.signInWithCustomToken = signInWithCustomToken;
         window.onAuthStateChanged = onAuthStateChanged;
@@ -76,6 +92,12 @@
         window.onSnapshot = onSnapshot;
         window.updateDoc = updateDoc;
         window.arrayUnion = arrayUnion;
+        window.runTransaction = runTransaction;
+        
+        // Informacja dla użytkownika (jeśli otworzy plik lokalnie bez konfiguracji)
+        if (!customConfig && typeof __firebase_config === 'undefined') {
+            document.body.innerHTML = '<div style="padding:20px; text-align:center; font-family:sans-serif;"><h1>Brak Konfiguracji</h1><p>Aby ta strona działała na Twoim serwerze, musisz edytować plik HTML i wkleić swoją konfigurację Firebase w zmiennej <code>customConfig</code>.</p></div>';
+        }
     </script>
 
     <script type="text/babel">
@@ -87,47 +109,24 @@
         const IconUndo = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/></svg>;
         const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
         const IconReset = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
+        const IconAlert = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>;
+        const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+        const IconX = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 18 18"/></svg>;
 
         // --- ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false, error: null };
-            }
-            static getDerivedStateFromError(error) {
-                return { hasError: true, error };
-            }
-            componentDidCatch(error, errorInfo) {
-                console.error("Crash:", error, errorInfo);
-            }
+            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            componentDidCatch(error, errorInfo) { console.error("Crash:", error, errorInfo); }
             render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center bg-slate-100">
-                            <h1 className="text-3xl font-bold text-red-600 mb-4">Coś poszło nie tak :(</h1>
-                            <p className="mb-6 text-slate-700">Aplikacja napotkała błąd. Spróbuj odświeżyć stronę.</p>
-                            <button onClick={() => window.location.reload()} className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">
-                                Odśwież stronę
-                            </button>
-                        </div>
-                    );
-                }
+                if (this.state.hasError) return <div className="p-4 text-center"><h1 className="text-red-600 font-bold">Błąd aplikacji</h1><p>{this.state.error?.message}</p><button onClick={()=>window.location.reload()} className="bg-blue-600 text-white px-4 py-2 rounded mt-4">Odśwież</button></div>;
                 return this.props.children;
             }
         }
 
         // --- DANE ---
-        const COUNTRY_ISO = {
-            'AUT': 'at', 'GER': 'de', 'SLO': 'si', 'NOR': 'no', 'POL': 'pl',
-            'JPN': 'jp', 'SUI': 'ch', 'FIN': 'fi', 'ITA': 'it', 'USA': 'us',
-            'EST': 'ee', 'BUL': 'bg', 'UKR': 'ua', 'TUR': 'tr', 'FRA': 'fr',
-            'ROU': 'ro', 'CAN': 'ca', 'KAZ': 'kz'
-        };
-
-        const getFlagUrl = (country3) => {
-            const code = COUNTRY_ISO[country3] || 'xx';
-            return `https://flagcdn.com/w40/${code}.png`;
-        };
+        const COUNTRY_ISO = { 'AUT': 'at', 'GER': 'de', 'SLO': 'si', 'NOR': 'no', 'POL': 'pl', 'JPN': 'jp', 'SUI': 'ch', 'FIN': 'fi', 'ITA': 'it', 'USA': 'us', 'EST': 'ee', 'BUL': 'bg', 'UKR': 'ua', 'TUR': 'tr', 'FRA': 'fr', 'ROU': 'ro', 'CAN': 'ca', 'KAZ': 'kz' };
+        const getFlagUrl = (country3) => `https://flagcdn.com/w40/${COUNTRY_ISO[country3] || 'xx'}.png`;
 
         const INITIAL_JUMPERS = [
             { id: 1, name: "Stefan Kraft", country: "AUT" }, { id: 2, name: "Jan Hörl", country: "AUT" }, { id: 3, name: "Manuel Fettner", country: "AUT" }, { id: 4, name: "Daniel Tschofenig", country: "AUT" }, { id: 5, name: "Michael Hayböck", country: "AUT" }, { id: 6, name: "Clemens Aigner", country: "AUT" }, { id: 7, name: "Daniel Huber", country: "AUT" }, { id: 8, name: "Philipp Aschenwald", country: "AUT" }, { id: 9, name: "Stephan Embacher", country: "AUT" }, { id: 10, name: "Maximilian Ortner", country: "AUT" }, { id: 11, name: "Jonas Schuster", country: "AUT" }, { id: 12, name: "Clemens Leitner", country: "AUT" },
@@ -152,12 +151,22 @@
             selections: {},
             currentTurnIndex: 0,
             isDraftStarted: false,
-            history: []
+            history: [],
+            undoRequest: null // { playerId, playerName }
         };
 
-        // Helper do ścieżki
+        // Funkcja pobierania referencji do dokumentu.
+        // Jeśli używasz customConfig (GitHub), appId będzie stałe.
+        // Jeśli używasz podglądu, appId jest wstrzykiwane.
         const getRoomDocRef = (roomName) => {
              const safeName = roomName.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+             // W przypadku własnego Firebase, ścieżka może być prostsza, np. collection(db, 'rooms').doc(...)
+             // Ale dla spójności z obecnym kodem zostawiamy strukturę, jeśli Twoja baza ma taką samą.
+             // DLA WŁASNEGO HOSTINGU (uproszczona ścieżka jest bezpieczniejsza):
+             if (window.appId === 'custom-app') {
+                 return window.doc(window.db, 'draft_rooms', `room_${safeName}`);
+             }
+             // DLA PODGLĄDU:
              return window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'rooms', `room_${safeName}`);
         };
 
@@ -172,21 +181,22 @@
 
             const [gameState, setGameState] = useState(DEFAULT_STATE);
             const [searchTerm, setSearchTerm] = useState('');
-            
             const prevPlayersLength = useRef(0);
 
-            // 1. Auth
+            // 1. Auth Logic
             useEffect(() => {
                 const initAuth = async () => {
                     try {
+                        // Sprawdź czy jest token z otoczenia (tylko w podglądzie)
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await window.signInWithCustomToken(window.auth, __initial_auth_token);
                         } else {
+                            // Własny hosting lub brak tokenu - logowanie anonimowe
                             await window.signInAnonymously(window.auth);
                         }
                     } catch (err) {
                         console.error("Auth error:", err);
-                        setErrorMsg("Błąd logowania.");
+                        setErrorMsg("Błąd logowania. Upewnij się, że w Twoim projekcie Firebase włączone jest 'Anonymous Auth'.");
                     }
                     setLoading(false);
                 };
@@ -194,62 +204,42 @@
                 return window.onAuthStateChanged(window.auth, (u) => setUser(u));
             }, []);
 
-            // 2. Sync - TYLKO ODCZYT (Fix dla 3+ graczy)
+            // 2. Sync
             useEffect(() => {
                 if (!user || !isJoined || !roomName) return;
-
                 const docRef = getRoomDocRef(roomName);
-                
                 const unsub = window.onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        const safeData = {
-                            ...DEFAULT_STATE,
-                            ...data,
-                            players: Array.isArray(data.players) ? data.players : [],
-                            selections: data.selections || {},
-                            history: Array.isArray(data.history) ? data.history : []
-                        };
-                        setGameState(safeData);
-                    } else {
-                        // Jeśli pokój nie istnieje, NIE TWORZYMY GO TUTAJ.
-                        // Czekamy aż joinRoom go utworzy lub host go utworzy.
-                        // To zapobiega wyścigowi (race condition).
-                        console.log("Oczekiwanie na dane pokoju...");
+                        setGameState({ ...DEFAULT_STATE, ...data });
                     }
                 }, (err) => {
                     console.error("Sync error:", err);
                     setErrorMsg("Problem z połączeniem.");
                 });
-
                 return () => unsub();
             }, [user, isJoined, roomName]);
 
-            // 3. Powiadomienie o nowym graczu
+            // 3. Powiadomienie
             useEffect(() => {
                 if (!user || !isJoined) return;
-                
                 const isHost = user.uid === gameState.hostId;
-                const currentCount = gameState.players.length;
-                
+                const currentCount = gameState.players ? gameState.players.length : 0;
                 if (isHost && currentCount > prevPlayersLength.current && prevPlayersLength.current > 0) {
                     setToastMsg("Nowy gracz dołączył!");
                     setTimeout(() => setToastMsg(null), 3000);
                 }
                 prevPlayersLength.current = currentCount;
-            }, [gameState.players.length, gameState.hostId, user, isJoined]);
+            }, [gameState.players, gameState.hostId, user, isJoined]);
 
-            // Logika Snake Draft
+            // Logika
             const turnOrder = useMemo(() => {
                 const players = gameState.players || [];
                 if (players.length === 0) return [];
-                
                 const order = [];
                 for (let round = 0; round < ROBUST_ROUNDS; round++) {
                     const roundOrder = players.map(p => p.id);
-                    if (round % 2 !== 0) {
-                        roundOrder.reverse();
-                    }
+                    if (round % 2 !== 0) roundOrder.reverse();
                     order.push(...roundOrder);
                 }
                 return order;
@@ -261,94 +251,78 @@
             const isMyTurn = !isDraftComplete && currentPlayerId === user?.uid;
             const isHost = user?.uid === gameState.hostId;
 
-            // Akcje
             const updateState = async (newState) => {
                 const docRef = getRoomDocRef(roomName);
                 await window.updateDoc(docRef, newState);
             };
 
-            // NAPRAWIONE: Bezpieczne dołączanie i tworzenie
+            // JOIN / RECOVERY
             const joinRoom = async () => {
                 if (!roomName.trim() || !localName.trim()) return;
-                
                 const docRef = getRoomDocRef(roomName);
                 
                 try {
-                    const docSnap = await window.getDoc(docRef);
-                    
-                    if (!docSnap.exists()) {
-                        // POKÓJ NIE ISTNIEJE -> TWORZYMY GO
-                        // To jest bezpieczne, bo tylko pierwsza osoba wchodzi w ten blok
-                        const newState = {
-                            ...DEFAULT_STATE,
-                            hostId: user.uid,
-                            players: [{ id: user.uid, name: localName }]
-                        };
-                        await window.setDoc(docRef, newState);
-                    } else {
-                        // POKÓJ ISTNIEJE -> DOŁĄCZAMY (używając arrayUnion dla bezpieczeństwa)
-                        const data = docSnap.data();
+                    // Używamy prostej logiki bez transakcji dla uproszczenia na własnym hostingu (mniej restrykcji)
+                    // lub z transakcją jeśli działa
+                    await window.runTransaction(window.db, async (transaction) => {
+                        const docSnap = await transaction.get(docRef);
                         
-                        if (data.players && data.players.length >= 10) {
-                            alert("Pokój jest pełny (max 10 graczy).");
-                            return;
-                        }
-
-                        if (!data.isDraftStarted) {
-                            // Sprawdzamy, czy gracz już jest na liście (po ID)
-                            const isAlreadyIn = data.players && data.players.find(p => p.id === user.uid);
-                            
-                            if (!isAlreadyIn) {
-                                await window.updateDoc(docRef, {
-                                    players: window.arrayUnion({ id: user.uid, name: localName })
-                                });
-                            } else {
-                                // Opcjonalnie: Aktualizacja imienia, jeśli gracz wrócił
-                                // To wymagałoby bardziej skomplikowanej logiki, na razie zostawiamy proste dołączanie
-                            }
+                        if (!docSnap.exists()) {
+                            const newState = {
+                                ...DEFAULT_STATE,
+                                hostId: user.uid,
+                                players: [{ id: user.uid, name: localName }]
+                            };
+                            transaction.set(docRef, newState);
                         } else {
-                            // Gra trwa - dołączamy jako obserwator (jeśli nie ma nas na liście)
-                            // Tutaj po prostu pozwalamy wejść do widoku, sync pobierze stan
+                            const data = docSnap.data();
+                            const currentPlayers = data.players || [];
+                            if (currentPlayers.length >= 10) throw new Error("Pokój pełny");
+
+                            const normalizedName = localName.trim().toLowerCase();
+                            const existingPlayerIndex = currentPlayers.findIndex(p => p.name.toLowerCase() === normalizedName);
+
+                            if (existingPlayerIndex !== -1) {
+                                const newPlayers = [...currentPlayers];
+                                newPlayers[existingPlayerIndex] = { ...newPlayers[existingPlayerIndex], id: user.uid, name: localName };
+                                transaction.update(docRef, { players: newPlayers });
+                            } else {
+                                if (!data.isDraftStarted) {
+                                    const newPlayers = [...currentPlayers, { id: user.uid, name: localName }];
+                                    transaction.update(docRef, { players: newPlayers });
+                                }
+                            }
                         }
-                    }
-                    
+                    });
                     setIsJoined(true);
                 } catch (e) {
                     console.error("Join error:", e);
-                    alert("Wystąpił błąd przy dołączaniu. Sprawdź połączenie.");
+                    alert("Błąd: " + e.message);
                 }
             };
 
-            // Zmiana kolejności graczy (Tylko Host, przed startem gry)
             const movePlayer = async (index, direction) => {
                 if (!isHost) return;
                 const newPlayers = [...gameState.players];
                 if (index + direction < 0 || index + direction >= newPlayers.length) return;
-                
                 const temp = newPlayers[index];
                 newPlayers[index] = newPlayers[index + direction];
                 newPlayers[index + direction] = temp;
-                
                 await updateState({ players: newPlayers });
             };
 
             const startDraft = async () => {
                 if (!isHost) return;
-                if (gameState.players.length < 1) {
-                    alert("Za mało graczy!"); 
-                    return; 
-                }
+                if (gameState.players.length < 1) return alert("Za mało graczy!"); 
                 await updateState({ isDraftStarted: true });
             };
 
             const selectJumper = async (jumper) => {
                 if (!isMyTurn || gameState.selections[jumper.id]) return;
-
                 const newHistory = [...gameState.history, {
                     selections: gameState.selections,
                     currentTurnIndex: gameState.currentTurnIndex
                 }];
-
                 await updateState({
                     selections: { ...gameState.selections, [jumper.id]: user.uid },
                     currentTurnIndex: gameState.currentTurnIndex + 1,
@@ -356,46 +330,48 @@
                 });
             };
 
-            const undoMove = async () => {
+            const requestUndo = async () => {
                 if (gameState.history.length === 0) return;
-                
-                const prevIndex = gameState.currentTurnIndex - 1;
-                const prevPlayerId = turnOrder[prevIndex];
-                
-                if (!isHost && user.uid !== prevPlayerId) {
-                    alert("Tylko Host lub gracz, który wykonał ruch, może cofnąć.");
-                    return;
-                }
+                await updateState({
+                    undoRequest: { playerId: user.uid, playerName: localName }
+                });
+            };
 
+            const approveUndo = async () => {
+                if (gameState.history.length === 0) return;
                 const lastState = gameState.history[gameState.history.length - 1];
                 const newHistory = gameState.history.slice(0, -1);
                 await updateState({
                     selections: lastState.selections,
                     currentTurnIndex: lastState.currentTurnIndex,
-                    history: newHistory
+                    history: newHistory,
+                    undoRequest: null
                 });
             };
+
+            const rejectUndo = async () => {
+                await updateState({ undoRequest: null });
+            };
             
-            // Naprawiona funkcja Resetu
             const resetRoom = async () => {
                 if (!isHost) return;
-                if (confirm("Czy na pewno zresetować grę? Wszystkie wybory zostaną usunięte.")) {
+                if (confirm("Czy na pewno zresetować grę?")) {
                     await updateState({
                         selections: {},
                         currentTurnIndex: 0,
                         isDraftStarted: false,
                         history: [],
-                        // Nie resetujemy players ani hostId
+                        undoRequest: null
                     });
                 }
             };
 
-            const exportImage = () => {
-                const el = document.getElementById('teams-container');
+            const exportImage = (elementId, filename) => {
+                const el = document.getElementById(elementId);
                 if (el) {
                     html2canvas(el, { backgroundColor: "#ffffff", useCORS: true }).then(c => {
                         const l = document.createElement('a');
-                        l.download = `skoki_${roomName}.png`;
+                        l.download = `${filename}_${roomName}.png`;
                         l.href = c.toDataURL();
                         l.click();
                     });
@@ -408,7 +384,7 @@
                 return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
             };
 
-            // Render
+            // --- RENDER ---
             if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="loader"></div></div>;
             
             if (!isJoined) {
@@ -418,168 +394,170 @@
                             <h1 className="text-4xl mb-4">⛷️</h1>
                             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dołącz do Gry</h2>
                             <div className="space-y-4">
-                                <input 
-                                    className="w-full p-3 border rounded-lg" 
-                                    placeholder="Twój Nick" 
-                                    value={localName} 
-                                    onChange={e => setLocalName(e.target.value)} 
-                                />
-                                <input 
-                                    className="w-full p-3 border rounded-lg uppercase" 
-                                    placeholder="Nazwa Pokoju (np. SKOKI1)" 
-                                    value={roomName} 
-                                    onChange={e => setRoomName(e.target.value)} 
-                                />
-                                <button 
-                                    onClick={joinRoom} 
-                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700"
-                                    disabled={!localName || !roomName}
-                                >
-                                    Wejdź
-                                </button>
+                                <input className="w-full p-3 border rounded-lg" placeholder="Twój Nick" value={localName} onChange={e => setLocalName(e.target.value)} />
+                                <input className="w-full p-3 border rounded-lg uppercase" placeholder="Nazwa Pokoju (np. SKOKI1)" value={roomName} onChange={e => setRoomName(e.target.value)} />
+                                <button onClick={joinRoom} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700" disabled={!localName || !roomName}>Wejdź</button>
                             </div>
+                            {/* Informacja dla trybu GitHub */}
+                            {window.appId === 'custom-app' && <p className="mt-4 text-xs text-gray-400">Tryb własnego hostingu (GitHub)</p>}
                         </div>
                     </div>
                 );
             }
 
-            // --- WIDOK 1: LOBBY (OCZEKIWANIE / USTALANIE KOLEJNOŚCI) ---
+            // WIDOK: LOBBY
             if (!gameState.isDraftStarted) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-                        {toastMsg && (
-                            <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
-                                {toastMsg}
-                            </div>
-                        )}
-                        
+                        {toastMsg && <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">{toastMsg}</div>}
                         <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-lg">
                             <h1 className="text-2xl font-bold text-center mb-2 text-slate-800">Poczekalnia Lobby</h1>
                             <p className="text-center text-slate-500 mb-6">Pokój: <span className="font-mono font-bold text-blue-600">{roomName.toUpperCase()}</span></p>
-                            
                             <div className="mb-6">
                                 <h3 className="font-bold text-gray-700 mb-3 flex justify-between items-center">
-                                    <span>Lista Graczy ({gameState.players.length})</span>
+                                    <span>Lista Graczy ({gameState.players ? gameState.players.length : 0})</span>
                                     {isHost && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Ustal kolejność ▼</span>}
                                 </h3>
                                 <ul className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                                    {gameState.players.map((player, index) => (
+                                    {(gameState.players || []).map((player, index) => (
                                         <li key={player.id} className={`flex items-center justify-between p-3 rounded-lg border ${player.id === user.uid ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
                                             <div className="flex items-center gap-3">
                                                 <span className="font-bold text-slate-400 w-6">{index + 1}.</span>
                                                 <span className="font-medium text-slate-800">{player.name} {player.id === user.uid && "(Ty)"} {player.id === gameState.hostId && "👑"}</span>
                                             </div>
-                                            
                                             {isHost && (
                                                 <div className="flex gap-1">
-                                                    <button onClick={() => movePlayer(index, -1)} disabled={index === 0} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"><IconChevronUp /></button>
-                                                    <button onClick={() => movePlayer(index, 1)} disabled={index === gameState.players.length - 1} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"><IconChevronDown /></button>
+                                                    <button onClick={() => movePlayer(index, -1)} disabled={index === 0} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30"><IconChevronUp /></button>
+                                                    <button onClick={() => movePlayer(index, 1)} disabled={index === gameState.players.length - 1} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30"><IconChevronDown /></button>
                                                 </div>
                                             )}
                                         </li>
                                     ))}
-                                    {gameState.players.length === 0 && <li className="text-center text-gray-400 italic">Czekanie na graczy...</li>}
                                 </ul>
                             </div>
-
                             {isHost ? (
-                                <button onClick={startDraft} disabled={gameState.players.length < 1} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed transition">
-                                    Rozpocznij Draft
-                                </button>
+                                <button onClick={startDraft} disabled={(gameState.players || []).length < 1} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-md disabled:bg-gray-300">Rozpocznij Draft</button>
                             ) : (
-                                <div className="text-center p-4 bg-gray-50 rounded-lg text-gray-500 animate-pulse border border-gray-200">
-                                    Oczekiwanie na Hosta...
-                                </div>
+                                <div className="text-center p-4 bg-gray-50 rounded-lg text-gray-500 animate-pulse border border-gray-200">Oczekiwanie na Hosta...</div>
                             )}
                         </div>
                     </div>
                 );
             }
 
-            // --- WIDOK 2: GRA (DRAFT) ---
+            // WIDOK: PODSUMOWANIE
+            if (isDraftComplete) {
+                return (
+                    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+                        <header className="mb-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <div>
+                                <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><span className="text-3xl">🏆</span> Draft Zakończony!</h1>
+                                <div className="text-sm text-slate-500 mt-1">Pokój: {roomName.toUpperCase()}</div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => exportImage('summary-board', 'wyniki')} className="bg-green-600 text-white px-6 py-2 rounded font-bold hover:bg-green-700 shadow-md flex items-center gap-2"><IconDownload /> Zapisz</button>
+                                {isHost && <button onClick={resetRoom} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded border border-red-200 flex items-center gap-1 font-medium ml-2"><IconReset /> Nowa Gra</button>}
+                            </div>
+                        </header>
+                        <div id="summary-board" className="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                            <div className="text-center mb-6 pb-4 border-b border-slate-100">
+                                <h2 className="text-3xl font-bold text-slate-800">OFICJALNE SKŁADY</h2>
+                                <p className="text-slate-400 text-sm">Fantasy Draft Skoki Narciarskie</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {gameState.players.map(player => {
+                                    const playerJumpers = INITIAL_JUMPERS.filter(j => gameState.selections[j.id] === player.id);
+                                    return (
+                                        <div key={player.id} className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                                            <div className="bg-slate-800 text-white p-3 text-center font-bold text-lg">{player.name}</div>
+                                            <ul className="p-4 space-y-3">
+                                                {playerJumpers.map((j, idx) => (
+                                                    <li key={j.id} className="flex items-center gap-3 text-sm bg-white p-2 rounded border border-slate-100 shadow-sm">
+                                                        <img src={getFlagUrl(j.country)} alt={j.country} className="w-6 h-4 object-cover rounded-sm shadow-sm" />
+                                                        <span className="font-semibold text-slate-700 flex-grow">{j.name}</span>
+                                                        {idx === 5 && <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">REZ</span>}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // WIDOK: GRA (DRAFT)
             return (
-                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
-                    {toastMsg && (
-                        <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
-                            {toastMsg}
+                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto relative">
+                    {isHost && gameState.undoRequest && (
+                        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-lg shadow-2xl border-2 border-red-500 p-4 flex flex-col items-center gap-3 request-alert">
+                            <div className="flex items-center gap-2 text-red-600 font-bold">
+                                <IconAlert />
+                                <span>Gracz {gameState.undoRequest.playerName} prosi o cofnięcie!</span>
+                            </div>
+                            <div className="flex gap-2 w-full">
+                                <button onClick={approveUndo} className="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700 font-bold flex justify-center items-center gap-1"><IconCheck /> Tak</button>
+                                <button onClick={rejectUndo} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300 font-bold flex justify-center items-center gap-1"><IconX /> Nie</button>
+                            </div>
                         </div>
                     )}
 
+                    {toastMsg && <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">{toastMsg}</div>}
                     <header className="mb-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                                <span className="text-3xl">⛷️</span> Fantasy Draft
-                            </h1>
+                            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><span className="text-3xl">⛷️</span> Fantasy Draft</h1>
                             <div className="flex gap-2 text-sm mt-1">
                                 <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Pokój: {roomName.toUpperCase()}</span>
                                 <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded">Ty: {localName}</span>
                                 {isHost && <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">HOST</span>}
                             </div>
                         </div>
-
                         <div className="flex gap-2">
                             {(gameState.isDraftStarted || gameState.history.length > 0) && (
                                 <>
-                                    <button onClick={undoMove} className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm text-slate-700"><IconUndo /> Cofnij</button>
-                                    <button onClick={exportImage} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 text-sm shadow-sm"><IconDownload /> Obraz</button>
+                                    {isHost ? (
+                                        <button onClick={approveUndo} className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm text-slate-700"><IconUndo /> Cofnij</button>
+                                    ) : (
+                                        <button 
+                                            onClick={requestUndo} 
+                                            disabled={!!gameState.undoRequest} 
+                                            className={`px-3 py-2 border rounded flex items-center gap-1 text-sm ${gameState.undoRequest?.playerId === user.uid ? 'bg-yellow-100 text-yellow-800' : 'hover:bg-gray-50 text-slate-700'}`}
+                                        >
+                                            <IconUndo /> {gameState.undoRequest?.playerId === user.uid ? "Czekam..." : "Poproś o cofnięcie"}
+                                        </button>
+                                    )}
+                                    <button onClick={() => exportImage('teams-container', 'skoki')} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 text-sm shadow-sm"><IconDownload /> Obraz</button>
                                 </>
                             )}
-                            {isHost && (
-                                <button onClick={resetRoom} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 flex items-center gap-1 text-sm ml-2"><IconReset /> Reset Gry</button>
-                            )}
+                            {isHost && <button onClick={resetRoom} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 flex items-center gap-1 text-sm ml-2"><IconReset /> Reset</button>}
                         </div>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        
-                        {/* LEWA KOLUMNA: SKOCZKOWIE */}
                         <div className="lg:col-span-7 xl:col-span-8">
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-[calc(100vh-200px)] flex flex-col">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="font-bold text-slate-700">Dostępni Skoczkowie</h2>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Szukaj..." 
-                                        className="border p-2 rounded-lg text-sm w-48"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
+                                    <input type="text" placeholder="Szukaj..." className="border p-2 rounded-lg text-sm w-48" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                                 </div>
-                                
                                 <div className="jumper-list flex-grow overflow-y-auto pr-2 pb-2">
                                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                                         {getFilteredJumpers().map(jumper => {
                                             const isTaken = gameState.selections[jumper.id];
                                             let cardClass = "jumper-card p-3 rounded-lg border flex flex-col items-center text-center cursor-pointer select-none relative overflow-hidden bg-white border-slate-200";
-                                            
                                             if (isTaken) {
                                                 cardClass = "jumper-card p-3 rounded-lg border flex flex-col items-center text-center select-none relative overflow-hidden bg-slate-50 border-slate-100 disabled";
                                             } else if (isMyTurn) {
                                                 cardClass += " hover:border-blue-400 my-turn";
                                             }
-
                                             return (
-                                                <div 
-                                                    key={jumper.id}
-                                                    onClick={() => selectJumper(jumper)}
-                                                    className={cardClass}
-                                                >
-                                                    <img 
-                                                        src={getFlagUrl(jumper.country)} 
-                                                        alt={jumper.country}
-                                                        className="w-8 h-6 object-cover mb-2 shadow-sm rounded-sm"
-                                                        crossOrigin="anonymous"
-                                                    />
-                                                    <span className={`font-semibold text-sm ${isTaken ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                                                        {jumper.name}
-                                                    </span>
+                                                <div key={jumper.id} onClick={() => selectJumper(jumper)} className={cardClass}>
+                                                    <img src={getFlagUrl(jumper.country)} alt={jumper.country} className="w-8 h-6 object-cover mb-2 shadow-sm rounded-sm" crossOrigin="anonymous" />
+                                                    <span className={`font-semibold text-sm ${isTaken ? 'line-through text-slate-400' : 'text-slate-800'}`}>{jumper.name}</span>
                                                     <span className="text-xs text-slate-400 font-mono">{jumper.country}</span>
-                                                    
-                                                    {isTaken && (
-                                                        <div className="absolute inset-0 flex items-center justify-center bg-slate-200/20">
-                                                            <span className="text-red-500 font-bold text-4xl opacity-40">✕</span>
-                                                        </div>
-                                                    )}
+                                                    {isTaken && <div className="absolute inset-0 flex items-center justify-center bg-slate-200/20"><span className="text-red-500 font-bold text-4xl opacity-40">✕</span></div>}
                                                 </div>
                                             );
                                         })}
@@ -587,10 +565,7 @@
                                 </div>
                             </div>
                         </div>
-
-                        {/* PRAWA KOLUMNA: KOSZYKI */}
                         <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
-                            {/* Status Bar */}
                             {!isDraftComplete && (
                                 <div className="bg-blue-600 text-white p-4 rounded-xl shadow-lg text-center sticky top-4 z-20 border border-blue-700">
                                     <div className="text-xs uppercase opacity-80 font-semibold tracking-wide mb-1">Runda {Math.floor(gameState.currentTurnIndex / gameState.players.length) + 1} / 6</div>
@@ -600,53 +575,27 @@
                                     </div>
                                 </div>
                             )}
-                            
-                            {isDraftComplete && (
-                                <div className="bg-green-600 text-white p-4 rounded-xl shadow-lg text-center border border-green-700">
-                                    <div className="text-2xl font-bold">Draft Zakończony! 🏁</div>
-                                    <p className="text-sm mt-2 opacity-90">Możesz pobrać wyniki jako obraz.</p>
-                                </div>
-                            )}
-
                             <div id="teams-container" className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
-                                <div className="text-center pb-2 border-b border-slate-300 mb-2">
-                                    <h2 className="font-bold text-lg text-slate-600">SKŁADY DRUŻYN</h2>
-                                </div>
-                                
+                                <div className="text-center pb-2 border-b border-slate-300 mb-2"><h2 className="font-bold text-lg text-slate-600">SKŁADY DRUŻYN</h2></div>
                                 {gameState.players.map(player => {
                                     const playerJumpers = INITIAL_JUMPERS.filter(j => gameState.selections[j.id] === player.id);
                                     const isCurrent = !isDraftComplete && currentPlayer?.id === player.id;
-                                    
                                     return (
-                                        <div 
-                                            key={player.id} 
-                                            className={`team-box bg-white p-4 rounded-lg shadow-sm border ${isCurrent ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}
-                                        >
+                                        <div key={player.id} className={`team-box bg-white p-4 rounded-lg shadow-sm border ${isCurrent ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}>
                                             <div className="flex justify-between items-center mb-3 border-b pb-2">
                                                 <h3 className="font-bold text-lg text-slate-800">{player.name}</h3>
-                                                <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">
-                                                    {playerJumpers.length}/6
-                                                </span>
+                                                <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">{playerJumpers.length}/6</span>
                                             </div>
-                                            
                                             <ul className="space-y-2">
                                                 {playerJumpers.map((j, idx) => (
                                                     <li key={j.id} className="flex items-center gap-2 text-sm">
-                                                        <img 
-                                                            src={getFlagUrl(j.country)} 
-                                                            alt={j.country}
-                                                            className="w-6 h-4 object-cover shadow-sm rounded-sm"
-                                                            crossOrigin="anonymous"
-                                                        />
+                                                        <img src={getFlagUrl(j.country)} alt={j.country} className="w-6 h-4 object-cover shadow-sm rounded-sm" crossOrigin="anonymous" />
                                                         <span className="font-medium text-slate-700">{j.name}</span>
                                                         {idx === 5 && <span className="ml-auto text-[10px] uppercase font-bold text-orange-500 border border-orange-200 px-1 rounded">REZ</span>}
                                                     </li>
                                                 ))}
                                                 {Array.from({ length: 6 - playerJumpers.length }).map((_, i) => (
-                                                    <li key={`e-${i}`} className="flex items-center gap-2 text-sm text-slate-300 italic border-b border-dashed border-slate-100 pb-1">
-                                                        <span className="text-lg opacity-50">🏳️</span>
-                                                        <span>...</span>
-                                                    </li>
+                                                    <li key={`e-${i}`} className="flex items-center gap-2 text-sm text-slate-300 italic border-b border-dashed border-slate-100 pb-1"><span className="text-lg opacity-50">🏳️</span><span>...</span></li>
                                                 ))}
                                             </ul>
                                         </div>
