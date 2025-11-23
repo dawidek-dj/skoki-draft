@@ -21,22 +21,35 @@
 
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; }
+        
         .jumper-card { transition: all 0.2s; }
         .jumper-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .jumper-card.disabled { opacity: 0.5; filter: grayscale(100%); cursor: not-allowed; transform: none; box-shadow: none; }
         .jumper-card.my-turn:hover { border-color: #3b82f6; ring: 2px solid #3b82f6; }
+        
         .team-box { transition: all 0.3s ease-in-out; }
         .active-turn { ring: 4px solid #3b82f6; transform: scale(1.02); z-index: 10; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
         .jumper-list::-webkit-scrollbar { width: 8px; }
         .jumper-list::-webkit-scrollbar-track { background: #f1f1f1; }
         .jumper-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .jumper-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
         .toast { animation: slideIn 0.3s ease-out forwards; }
+        
         .request-alert { animation: pulse-border 2s infinite; }
-        @keyframes pulse-border { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
     </style>
 </head>
 <body>
@@ -47,56 +60,64 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- MIEJSCE NA TWOJĄ KONFIGURACJĘ (DLA GITHUB) ---
-        // Jeśli chcesz wrzucić stronę na własny serwer, wklej tutaj obiekt z konsoli Firebase.
-        // Powinien wyglądać tak: const customConfig = { apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
-    authDomain: "skoki-draft.firebaseapp.com",
-    projectId: "skoki-draft",
-    storageBucket: "skoki-draft.firebasestorage.app",
-    messagingSenderId: "924643436062",
-    appId: "1:924643436062:web:075af64db6eb796175f00f",
-    measurementId: "G-3YM0YNPRW3"
-  }; 
+        // --- KONFIGURACJA (DLA GITHUB/WŁASNEGO SERWERA) ---
+        // Aby strona działała na GitHub Pages, wklej poniżej obiekt konfiguracyjny ze swojego projektu Firebase.
+        // Instrukcja: Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration -> Config
+const firebaseConfig = {
+  apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
+  authDomain: "skoki-draft.firebaseapp.com",
+  projectId: "skoki-draft",
+  storageBucket: "skoki-draft.firebasestorage.app",
+  messagingSenderId: "924643436062",
+  appId: "1:924643436062:web:075af64db6eb796175f00f",
+  measurementId: "G-3YM0YNPRW3"
+};
+        // Przykład:
+        // const customConfig = {
+        //   apiKey: "AIzaSy...",
+        //   authDomain: "twoj-projekt.firebaseapp.com",
+        //   projectId: "twoj-projekt",
+        //   storageBucket: "twoj-projekt.appspot.com",
+        //   messagingSenderId: "...",
+        //   appId: "..."
+        // };
 
-        // Logika wyboru konfiguracji (Automatyczna)
+        // Logika wyboru konfiguracji
         let firebaseConfig;
         let currentAppId = 'default-app-id';
 
         if (customConfig) {
-            // Użyj własnej konfiguracji (Dla GitHub/Własnego hostingu)
             firebaseConfig = customConfig;
-            currentAppId = 'custom-app'; // Używamy stałego ID dla własnej bazy
+            currentAppId = 'custom-app';
         } else if (typeof __firebase_config !== 'undefined') {
-            // Użyj konfiguracji środowiska testowego (Dla podglądu tutaj)
             firebaseConfig = JSON.parse(__firebase_config);
             if (typeof __app_id !== 'undefined') currentAppId = __app_id;
         } else {
-            console.error("Brak konfiguracji Firebase! Uzupełnij zmienną 'customConfig' w kodzie.");
+            console.warn("Brak konfiguracji Firebase. Aplikacja może nie działać poza środowiskiem testowym.");
         }
 
-        // Inicjalizacja
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
+        if (firebaseConfig) {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
 
-        // Eksport do globalnego scope dla Reacta
-        window.db = db;
-        window.auth = auth;
-        window.appId = currentAppId;
-        window.signInAnonymously = signInAnonymously;
-        window.signInWithCustomToken = signInWithCustomToken;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.doc = doc;
-        window.setDoc = setDoc;
-        window.getDoc = getDoc;
-        window.onSnapshot = onSnapshot;
-        window.updateDoc = updateDoc;
-        window.arrayUnion = arrayUnion;
-        window.runTransaction = runTransaction;
-        
-        // Informacja dla użytkownika (jeśli otworzy plik lokalnie bez konfiguracji)
-        if (!customConfig && typeof __firebase_config === 'undefined') {
-            document.body.innerHTML = '<div style="padding:20px; text-align:center; font-family:sans-serif;"><h1>Brak Konfiguracji</h1><p>Aby ta strona działała na Twoim serwerze, musisz edytować plik HTML i wkleić swoją konfigurację Firebase w zmiennej <code>customConfig</code>.</p></div>';
+            // Eksport do window, aby React mógł korzystać
+            window.db = db;
+            window.auth = auth;
+            window.appId = currentAppId;
+            window.signInAnonymously = signInAnonymously;
+            window.signInWithCustomToken = signInWithCustomToken;
+            window.onAuthStateChanged = onAuthStateChanged;
+            window.doc = doc;
+            window.setDoc = setDoc;
+            window.getDoc = getDoc;
+            window.onSnapshot = onSnapshot;
+            window.updateDoc = updateDoc;
+            window.arrayUnion = arrayUnion;
+            window.runTransaction = runTransaction;
+            
+            // Flaga gotowości
+            window.isFirebaseReady = true;
         }
     </script>
 
@@ -115,11 +136,16 @@
 
         // --- ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
-            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
             static getDerivedStateFromError(error) { return { hasError: true, error }; }
             componentDidCatch(error, errorInfo) { console.error("Crash:", error, errorInfo); }
             render() {
-                if (this.state.hasError) return <div className="p-4 text-center"><h1 className="text-red-600 font-bold">Błąd aplikacji</h1><p>{this.state.error?.message}</p><button onClick={()=>window.location.reload()} className="bg-blue-600 text-white px-4 py-2 rounded mt-4">Odśwież</button></div>;
+                if (this.state.hasError) {
+                    return <div className="p-4 text-center"><h1 className="text-red-600 font-bold">Błąd aplikacji</h1><p>{this.state.error?.message}</p><button onClick={()=>window.location.reload()} className="bg-blue-600 text-white px-4 py-2 rounded mt-4">Odśwież</button></div>;
+                }
                 return this.props.children;
             }
         }
@@ -155,19 +181,21 @@
             undoRequest: null // { playerId, playerName }
         };
 
-        // Funkcja pobierania referencji do dokumentu.
-        // Jeśli używasz customConfig (GitHub), appId będzie stałe.
-        // Jeśli używasz podglądu, appId jest wstrzykiwane.
+        // Helper do ścieżki
         const getRoomDocRef = (roomName) => {
              const safeName = roomName.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
-             // W przypadku własnego Firebase, ścieżka może być prostsza, np. collection(db, 'rooms').doc(...)
-             // Ale dla spójności z obecnym kodem zostawiamy strukturę, jeśli Twoja baza ma taką samą.
-             // DLA WŁASNEGO HOSTINGU (uproszczona ścieżka jest bezpieczniejsza):
-             if (window.appId === 'custom-app') {
+             // Obsługa własnego hostingu
+             const collectionName = (window.appId === 'custom-app') ? 'draft_rooms' : 'rooms';
+             // Jeśli nie jesteśmy w środowisku Google (brak appId), też użyj prostej ścieżki
+             if (!window.appId) {
                  return window.doc(window.db, 'draft_rooms', `room_${safeName}`);
              }
-             // DLA PODGLĄDU:
-             return window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'rooms', `room_${safeName}`);
+             // Ścieżka dla środowiska podglądu
+             if (window.appId === 'default-app-id' || window.appId.startsWith('canvas')) {
+                 return window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'rooms', `room_${safeName}`);
+             }
+             // Domyślna prosta ścieżka
+             return window.doc(window.db, 'draft_rooms', `room_${safeName}`);
         };
 
         const App = () => {
@@ -185,18 +213,28 @@
 
             // 1. Auth Logic
             useEffect(() => {
+                if (!window.auth) {
+                    setErrorMsg("Brak konfiguracji Firebase.");
+                    setLoading(false);
+                    return;
+                }
+
                 const initAuth = async () => {
                     try {
-                        // Sprawdź czy jest token z otoczenia (tylko w podglądzie)
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await window.signInWithCustomToken(window.auth, __initial_auth_token);
-                        } else {
-                            // Własny hosting lub brak tokenu - logowanie anonimowe
-                            await window.signInAnonymously(window.auth);
-                        }
+                        // Próba logowania anonimowego (najbardziej uniwersalna)
+                        await window.signInAnonymously(window.auth);
                     } catch (err) {
                         console.error("Auth error:", err);
-                        setErrorMsg("Błąd logowania. Upewnij się, że w Twoim projekcie Firebase włączone jest 'Anonymous Auth'.");
+                        // Jeśli anonimowe nie działa, sprawdź czy jest token (tylko w podglądzie)
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            try {
+                                await window.signInWithCustomToken(window.auth, __initial_auth_token);
+                            } catch (e) {
+                                setErrorMsg("Błąd logowania. Sprawdź konsolę.");
+                            }
+                        } else {
+                            setErrorMsg("Błąd logowania. Włącz 'Anonymous Auth' w konsoli Firebase.");
+                        }
                     }
                     setLoading(false);
                 };
@@ -262,8 +300,6 @@
                 const docRef = getRoomDocRef(roomName);
                 
                 try {
-                    // Używamy prostej logiki bez transakcji dla uproszczenia na własnym hostingu (mniej restrykcji)
-                    // lub z transakcją jeśli działa
                     await window.runTransaction(window.db, async (transaction) => {
                         const docSnap = await transaction.get(docRef);
                         
@@ -393,13 +429,19 @@
                         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center">
                             <h1 className="text-4xl mb-4">⛷️</h1>
                             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dołącz do Gry</h2>
+                            
+                            {/* Miejsce na komunikat dla GitHub */}
+                            {(!window.appId || window.appId === 'default-app-id') && typeof __firebase_config === 'undefined' && (
+                                <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 text-sm rounded">
+                                    <b>Uwaga:</b> Skonfiguruj Firebase w pliku HTML, aby gra działała.
+                                </div>
+                            )}
+
                             <div className="space-y-4">
                                 <input className="w-full p-3 border rounded-lg" placeholder="Twój Nick" value={localName} onChange={e => setLocalName(e.target.value)} />
                                 <input className="w-full p-3 border rounded-lg uppercase" placeholder="Nazwa Pokoju (np. SKOKI1)" value={roomName} onChange={e => setRoomName(e.target.value)} />
                                 <button onClick={joinRoom} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700" disabled={!localName || !roomName}>Wejdź</button>
                             </div>
-                            {/* Informacja dla trybu GitHub */}
-                            {window.appId === 'custom-app' && <p className="mt-4 text-xs text-gray-400">Tryb własnego hostingu (GitHub)</p>}
                         </div>
                     </div>
                 );
@@ -518,7 +560,7 @@
                             {(gameState.isDraftStarted || gameState.history.length > 0) && (
                                 <>
                                     {isHost ? (
-                                        <button onClick={approveUndo} className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm text-slate-700"><IconUndo /> Cofnij</button>
+                                        <button onClick={approveUndo} className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm text-slate-700"><IconUndo /> Cofnij (Host)</button>
                                     ) : (
                                         <button 
                                             onClick={requestUndo} 
@@ -608,8 +650,22 @@
             );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        // --- FIX: Wait for Firebase ready event or poll before mounting React app to avoid race condition ---
+        const startReact = () => {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        };
+
+        // Simple polling to wait for Firebase initialization
+        const waitForFirebase = () => {
+            if (window.isFirebaseReady && window.onAuthStateChanged) {
+                startReact();
+            } else {
+                setTimeout(waitForFirebase, 50);
+            }
+        };
+        waitForFirebase();
+
     </script>
 </body>
 </html>
