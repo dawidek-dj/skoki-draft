@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skoki Narciarskie - Fantasy Draft Online</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; }
+        
+        /* Karty skoczków */
+        .jumper-card { transition: all 0.2s; }
+        .jumper-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .jumper-card.disabled { opacity: 0.5; filter: grayscale(100%); cursor: not-allowed; transform: none; box-shadow: none; }
+        .jumper-card.my-turn:hover { border-color: #3b82f6; ring: 2px solid #3b82f6; }
+        
+        /* Aktywna tura w koszyku */
+        .team-box { transition: all 0.3s ease-in-out; }
+        .active-turn { ring: 4px solid #3b82f6; transform: scale(1.02); z-index: 10; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        
+        /* Ładowanie */
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Pasek przewijania */
+        .jumper-list::-webkit-scrollbar { width: 8px; }
+        .jumper-list::-webkit-scrollbar-track { background: #f1f1f1; }
+        .jumper-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .jumper-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Animacja Toast (Powiadomienia) */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .toast { animation: slideIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        window.db = db;
+        window.auth = auth;
+        window.appId = appId;
+        window.signInAnonymously = signInAnonymously;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.getDoc = getDoc;
+        window.onSnapshot = onSnapshot;
+        window.updateDoc = updateDoc;
+        window.arrayUnion = arrayUnion;
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // --- IKONY SVG ---
+        const IconChevronUp = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>;
+        const IconChevronDown = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>;
+        const IconUndo = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/></svg>;
+        const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
+        const IconReset = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
+
+        // --- ERROR BOUNDARY ---
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            componentDidCatch(error, errorInfo) {
+                console.error("Crash:", error, errorInfo);
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center bg-slate-100">
+                            <h1 className="text-3xl font-bold text-red-600 mb-4">Coś poszło nie tak :(</h1>
+                            <p className="mb-6 text-slate-700">Aplikacja napotkała błąd. Spróbuj odświeżyć stronę.</p>
+                            <button onClick={() => window.location.reload()} className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">
+                                Odśwież stronę
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        // --- DANE ---
+        const COUNTRY_ISO = {
+            'AUT': 'at', 'GER': 'de', 'SLO': 'si', 'NOR': 'no', 'POL': 'pl',
+            'JPN': 'jp', 'SUI': 'ch', 'FIN': 'fi', 'ITA': 'it', 'USA': 'us',
+            'EST': 'ee', 'BUL': 'bg', 'UKR': 'ua', 'TUR': 'tr', 'FRA': 'fr',
+            'ROU': 'ro', 'CAN': 'ca', 'KAZ': 'kz'
+        };
+
+        const getFlagUrl = (country3) => {
+            const code = COUNTRY_ISO[country3] || 'xx';
+            return `https://flagcdn.com/w40/${code}.png`;
+        };
+
+        const INITIAL_JUMPERS = [
+            { id: 1, name: "Stefan Kraft", country: "AUT" }, { id: 2, name: "Jan Hörl", country: "AUT" }, { id: 3, name: "Manuel Fettner", country: "AUT" }, { id: 4, name: "Daniel Tschofenig", country: "AUT" }, { id: 5, name: "Michael Hayböck", country: "AUT" }, { id: 6, name: "Clemens Aigner", country: "AUT" }, { id: 7, name: "Daniel Huber", country: "AUT" }, { id: 8, name: "Philipp Aschenwald", country: "AUT" }, { id: 9, name: "Stephan Embacher", country: "AUT" }, { id: 10, name: "Maximilian Ortner", country: "AUT" }, { id: 11, name: "Jonas Schuster", country: "AUT" }, { id: 12, name: "Clemens Leitner", country: "AUT" },
+            { id: 13, name: "Andreas Wellinger", country: "GER" }, { id: 14, name: "Karl Geiger", country: "GER" }, { id: 15, name: "Pius Paschke", country: "GER" }, { id: 16, name: "Philipp Raimund", country: "GER" }, { id: 17, name: "Stephan Leyhe", country: "GER" }, { id: 18, name: "Constantin Schmid", country: "GER" }, { id: 19, name: "Felix Hoffmann", country: "GER" }, { id: 20, name: "Luca Roth", country: "GER" },
+            { id: 21, name: "Anže Lanišek", country: "SLO" }, { id: 22, name: "Lovro Kos", country: "SLO" }, { id: 23, name: "Peter Prevc", country: "SLO" }, { id: 24, name: "Domen Prevc", country: "SLO" }, { id: 25, name: "Timi Zajc", country: "SLO" }, { id: 26, name: "Žiga Jelar", country: "SLO" }, { id: 27, name: "Žiga Jančar", country: "SLO" }, { id: 28, name: "Rok Oblak", country: "SLO" },
+            { id: 29, name: "Marius Lindvik", country: "NOR" }, { id: 30, name: "Johann André Forfang", country: "NOR" }, { id: 31, name: "Halvor Egner Granerud", country: "NOR" }, { id: 32, name: "Kristoffer Eriksen Sundal", country: "NOR" }, { id: 33, name: "Daniel-André Tande", country: "NOR" }, { id: 34, name: "Fredrik Villumstad", country: "NOR" }, { id: 35, name: "Benjamin Østvold", country: "NOR" }, { id: 36, name: "Robin Pedersen", country: "NOR" }, { id: 37, name: "Robert Johansson", country: "NOR" },
+            { id: 38, name: "Aleksander Zniszczoł", country: "POL" }, { id: 39, name: "Piotr Żyła", country: "POL" }, { id: 40, name: "Dawid Kubacki", country: "POL" }, { id: 41, name: "Kamil Stoch", country: "POL" }, { id: 42, name: "Paweł Wąsek", country: "POL" }, { id: 43, name: "Maciej Kot", country: "POL" }, { id: 44, name: "Jakub Wolny", country: "POL" },
+            { id: 45, name: "Ryōyū Kobayashi", country: "JPN" }, { id: 46, name: "Ren Nikaidō", country: "JPN" }, { id: 47, name: "Junshirō Kobayashi", country: "JPN" }, { id: 48, name: "Naoki Nakamura", country: "JPN" }, { id: 49, name: "Keiichi Satō", country: "JPN" }, { id: 50, name: "Yukiya Satō", country: "JPN" }, { id: 51, name: "Sakutarō Kobayashi", country: "JPN" },
+            { id: 52, name: "Gregor Deschwanden", country: "SUI" }, { id: 53, name: "Killian Peier", country: "SUI" }, { id: 54, name: "Simon Ammann", country: "SUI" }, { id: 55, name: "Remo Imhof", country: "SUI" }, { id: 56, name: "Sandro Hauswirth", country: "SUI" }, { id: 57, name: "Felix Trunz", country: "SUI" },
+            { id: 58, name: "Antti Aalto", country: "FIN" }, { id: 59, name: "Niko Kytösaho", country: "FIN" }, { id: 60, name: "Eetu Nousiainen", country: "FIN" }, { id: 61, name: "Kasperi Valto", country: "FIN" }, { id: 62, name: "Vilho Palosaari", country: "FIN" },
+            { id: 63, name: "Alex Insam", country: "ITA" }, { id: 64, name: "Giovanni Bresadola", country: "ITA" }, { id: 65, name: "Andrea Campregher", country: "ITA" }, { id: 66, name: "Enzo Milesi", country: "ITA" },
+            { id: 67, name: "Erik Belshaw", country: "USA" }, { id: 68, name: "Tate Frantz", country: "USA" }, { id: 69, name: "Casey Larson", country: "USA" }, { id: 70, name: "Kevin Bickner", country: "USA" }, { id: 71, name: "Jason Colby", country: "USA" },
+            { id: 72, name: "Artti Aigro", country: "EST" }, { id: 73, name: "Kaimar Vagul", country: "EST" },
+            { id: 74, name: "Vladimir Zografski", country: "BUL" }, { id: 75, name: "Yevhen Marusiak", country: "UKR" }, { id: 76, name: "Fatih Arda İpcioğlu", country: "TUR" }, { id: 77, name: "Valentin Foubert", country: "FRA" }, { id: 78, name: "Daniel Andrei Cacina", country: "ROU" }, { id: 79, name: "Mackenzie Boyd-Clowes", country: "CAN" }, { id: 80, name: "Danił Wasiljew", country: "KAZ" }
+        ];
+
+        const ROBUST_ROUNDS = 6;
+        
+        const DEFAULT_STATE = {
+            hostId: null,
+            players: [], 
+            selections: {},
+            currentTurnIndex: 0,
+            isDraftStarted: false,
+            history: []
+        };
+
+        // Helper do ścieżki
+        const getRoomDocRef = (roomName) => {
+             const safeName = roomName.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+             return window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'rooms', `room_${safeName}`);
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [roomName, setRoomName] = useState("");
+            const [isJoined, setIsJoined] = useState(false);
+            const [localName, setLocalName] = useState("");
+            const [loading, setLoading] = useState(true);
+            const [errorMsg, setErrorMsg] = useState(null);
+            const [toastMsg, setToastMsg] = useState(null);
+
+            const [gameState, setGameState] = useState(DEFAULT_STATE);
+            const [searchTerm, setSearchTerm] = useState('');
+            
+            const prevPlayersLength = useRef(0);
+
+            // 1. Auth
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await window.signInWithCustomToken(window.auth, __initial_auth_token);
+                        } else {
+                            await window.signInAnonymously(window.auth);
+                        }
+                    } catch (err) {
+                        console.error("Auth error:", err);
+                        setErrorMsg("Błąd logowania.");
+                    }
+                    setLoading(false);
+                };
+                initAuth();
+                return window.onAuthStateChanged(window.auth, (u) => setUser(u));
+            }, []);
+
+            // 2. Sync - TYLKO ODCZYT (Fix dla 3+ graczy)
+            useEffect(() => {
+                if (!user || !isJoined || !roomName) return;
+
+                const docRef = getRoomDocRef(roomName);
+                
+                const unsub = window.onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        const safeData = {
+                            ...DEFAULT_STATE,
+                            ...data,
+                            players: Array.isArray(data.players) ? data.players : [],
+                            selections: data.selections || {},
+                            history: Array.isArray(data.history) ? data.history : []
+                        };
+                        setGameState(safeData);
+                    } else {
+                        // Jeśli pokój nie istnieje, NIE TWORZYMY GO TUTAJ.
+                        // Czekamy aż joinRoom go utworzy lub host go utworzy.
+                        // To zapobiega wyścigowi (race condition).
+                        console.log("Oczekiwanie na dane pokoju...");
+                    }
+                }, (err) => {
+                    console.error("Sync error:", err);
+                    setErrorMsg("Problem z połączeniem.");
+                });
+
+                return () => unsub();
+            }, [user, isJoined, roomName]);
+
+            // 3. Powiadomienie o nowym graczu
+            useEffect(() => {
+                if (!user || !isJoined) return;
+                
+                const isHost = user.uid === gameState.hostId;
+                const currentCount = gameState.players.length;
+                
+                if (isHost && currentCount > prevPlayersLength.current && prevPlayersLength.current > 0) {
+                    setToastMsg("Nowy gracz dołączył!");
+                    setTimeout(() => setToastMsg(null), 3000);
+                }
+                prevPlayersLength.current = currentCount;
+            }, [gameState.players.length, gameState.hostId, user, isJoined]);
+
+            // Logika Snake Draft
+            const turnOrder = useMemo(() => {
+                const players = gameState.players || [];
+                if (players.length === 0) return [];
+                
+                const order = [];
+                for (let round = 0; round < ROBUST_ROUNDS; round++) {
+                    const roundOrder = players.map(p => p.id);
+                    if (round % 2 !== 0) {
+                        roundOrder.reverse();
+                    }
+                    order.push(...roundOrder);
+                }
+                return order;
+            }, [gameState.players]);
+
+            const currentPlayerId = turnOrder[gameState.currentTurnIndex];
+            const currentPlayer = (gameState.players || []).find(p => p.id === currentPlayerId);
+            const isDraftComplete = gameState.currentTurnIndex >= turnOrder.length;
+            const isMyTurn = !isDraftComplete && currentPlayerId === user?.uid;
+            const isHost = user?.uid === gameState.hostId;
+
+            // Akcje
+            const updateState = async (newState) => {
+                const docRef = getRoomDocRef(roomName);
+                await window.updateDoc(docRef, newState);
+            };
+
+            // NAPRAWIONE: Bezpieczne dołączanie i tworzenie
+            const joinRoom = async () => {
+                if (!roomName.trim() || !localName.trim()) return;
+                
+                const docRef = getRoomDocRef(roomName);
+                
+                try {
+                    const docSnap = await window.getDoc(docRef);
+                    
+                    if (!docSnap.exists()) {
+                        // POKÓJ NIE ISTNIEJE -> TWORZYMY GO
+                        // To jest bezpieczne, bo tylko pierwsza osoba wchodzi w ten blok
+                        const newState = {
+                            ...DEFAULT_STATE,
+                            hostId: user.uid,
+                            players: [{ id: user.uid, name: localName }]
+                        };
+                        await window.setDoc(docRef, newState);
+                    } else {
+                        // POKÓJ ISTNIEJE -> DOŁĄCZAMY (używając arrayUnion dla bezpieczeństwa)
+                        const data = docSnap.data();
+                        
+                        if (data.players && data.players.length >= 10) {
+                            alert("Pokój jest pełny (max 10 graczy).");
+                            return;
+                        }
+
+                        if (!data.isDraftStarted) {
+                            // Sprawdzamy, czy gracz już jest na liście (po ID)
+                            const isAlreadyIn = data.players && data.players.find(p => p.id === user.uid);
+                            
+                            if (!isAlreadyIn) {
+                                await window.updateDoc(docRef, {
+                                    players: window.arrayUnion({ id: user.uid, name: localName })
+                                });
+                            } else {
+                                // Opcjonalnie: Aktualizacja imienia, jeśli gracz wrócił
+                                // To wymagałoby bardziej skomplikowanej logiki, na razie zostawiamy proste dołączanie
+                            }
+                        } else {
+                            // Gra trwa - dołączamy jako obserwator (jeśli nie ma nas na liście)
+                            // Tutaj po prostu pozwalamy wejść do widoku, sync pobierze stan
+                        }
+                    }
+                    
+                    setIsJoined(true);
+                } catch (e) {
+                    console.error("Join error:", e);
+                    alert("Wystąpił błąd przy dołączaniu. Sprawdź połączenie.");
+                }
+            };
+
+            // Zmiana kolejności graczy (Tylko Host, przed startem gry)
+            const movePlayer = async (index, direction) => {
+                if (!isHost) return;
+                const newPlayers = [...gameState.players];
+                if (index + direction < 0 || index + direction >= newPlayers.length) return;
+                
+                const temp = newPlayers[index];
+                newPlayers[index] = newPlayers[index + direction];
+                newPlayers[index + direction] = temp;
+                
+                await updateState({ players: newPlayers });
+            };
+
+            const startDraft = async () => {
+                if (!isHost) return;
+                if (gameState.players.length < 1) {
+                    alert("Za mało graczy!"); 
+                    return; 
+                }
+                await updateState({ isDraftStarted: true });
+            };
+
+            const selectJumper = async (jumper) => {
+                if (!isMyTurn || gameState.selections[jumper.id]) return;
+
+                const newHistory = [...gameState.history, {
+                    selections: gameState.selections,
+                    currentTurnIndex: gameState.currentTurnIndex
+                }];
+
+                await updateState({
+                    selections: { ...gameState.selections, [jumper.id]: user.uid },
+                    currentTurnIndex: gameState.currentTurnIndex + 1,
+                    history: newHistory
+                });
+            };
+
+            const undoMove = async () => {
+                if (gameState.history.length === 0) return;
+                
+                const prevIndex = gameState.currentTurnIndex - 1;
+                const prevPlayerId = turnOrder[prevIndex];
+                
+                if (!isHost && user.uid !== prevPlayerId) {
+                    alert("Tylko Host lub gracz, który wykonał ruch, może cofnąć.");
+                    return;
+                }
+
+                const lastState = gameState.history[gameState.history.length - 1];
+                const newHistory = gameState.history.slice(0, -1);
+                await updateState({
+                    selections: lastState.selections,
+                    currentTurnIndex: lastState.currentTurnIndex,
+                    history: newHistory
+                });
+            };
+            
+            // Naprawiona funkcja Resetu
+            const resetRoom = async () => {
+                if (!isHost) return;
+                if (confirm("Czy na pewno zresetować grę? Wszystkie wybory zostaną usunięte.")) {
+                    await updateState({
+                        selections: {},
+                        currentTurnIndex: 0,
+                        isDraftStarted: false,
+                        history: [],
+                        // Nie resetujemy players ani hostId
+                    });
+                }
+            };
+
+            const exportImage = () => {
+                const el = document.getElementById('teams-container');
+                if (el) {
+                    html2canvas(el, { backgroundColor: "#ffffff", useCORS: true }).then(c => {
+                        const l = document.createElement('a');
+                        l.download = `skoki_${roomName}.png`;
+                        l.href = c.toDataURL();
+                        l.click();
+                    });
+                }
+            };
+
+            const getFilteredJumpers = () => {
+                if (!searchTerm) return INITIAL_JUMPERS;
+                const lower = searchTerm.toLowerCase();
+                return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
+            };
+
+            // Render
+            if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="loader"></div></div>;
+            
+            if (!isJoined) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center">
+                            <h1 className="text-4xl mb-4">⛷️</h1>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Dołącz do Gry</h2>
+                            <div className="space-y-4">
+                                <input 
+                                    className="w-full p-3 border rounded-lg" 
+                                    placeholder="Twój Nick" 
+                                    value={localName} 
+                                    onChange={e => setLocalName(e.target.value)} 
+                                />
+                                <input 
+                                    className="w-full p-3 border rounded-lg uppercase" 
+                                    placeholder="Nazwa Pokoju (np. SKOKI1)" 
+                                    value={roomName} 
+                                    onChange={e => setRoomName(e.target.value)} 
+                                />
+                                <button 
+                                    onClick={joinRoom} 
+                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700"
+                                    disabled={!localName || !roomName}
+                                >
+                                    Wejdź
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- WIDOK 1: LOBBY (OCZEKIWANIE / USTALANIE KOLEJNOŚCI) ---
+            if (!gameState.isDraftStarted) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                        {toastMsg && (
+                            <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
+                                {toastMsg}
+                            </div>
+                        )}
+                        
+                        <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-lg">
+                            <h1 className="text-2xl font-bold text-center mb-2 text-slate-800">Poczekalnia Lobby</h1>
+                            <p className="text-center text-slate-500 mb-6">Pokój: <span className="font-mono font-bold text-blue-600">{roomName.toUpperCase()}</span></p>
+                            
+                            <div className="mb-6">
+                                <h3 className="font-bold text-gray-700 mb-3 flex justify-between items-center">
+                                    <span>Lista Graczy ({gameState.players.length})</span>
+                                    {isHost && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Ustal kolejność ▼</span>}
+                                </h3>
+                                <ul className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                                    {gameState.players.map((player, index) => (
+                                        <li key={player.id} className={`flex items-center justify-between p-3 rounded-lg border ${player.id === user.uid ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-bold text-slate-400 w-6">{index + 1}.</span>
+                                                <span className="font-medium text-slate-800">{player.name} {player.id === user.uid && "(Ty)"} {player.id === gameState.hostId && "👑"}</span>
+                                            </div>
+                                            
+                                            {isHost && (
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => movePlayer(index, -1)} disabled={index === 0} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"><IconChevronUp /></button>
+                                                    <button onClick={() => movePlayer(index, 1)} disabled={index === gameState.players.length - 1} className="p-1 hover:bg-blue-200 rounded text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"><IconChevronDown /></button>
+                                                </div>
+                                            )}
+                                        </li>
+                                    ))}
+                                    {gameState.players.length === 0 && <li className="text-center text-gray-400 italic">Czekanie na graczy...</li>}
+                                </ul>
+                            </div>
+
+                            {isHost ? (
+                                <button onClick={startDraft} disabled={gameState.players.length < 1} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed transition">
+                                    Rozpocznij Draft
+                                </button>
+                            ) : (
+                                <div className="text-center p-4 bg-gray-50 rounded-lg text-gray-500 animate-pulse border border-gray-200">
+                                    Oczekiwanie na Hosta...
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- WIDOK 2: GRA (DRAFT) ---
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+                    {toastMsg && (
+                        <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
+                            {toastMsg}
+                        </div>
+                    )}
+
+                    <header className="mb-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                <span className="text-3xl">⛷️</span> Fantasy Draft
+                            </h1>
+                            <div className="flex gap-2 text-sm mt-1">
+                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Pokój: {roomName.toUpperCase()}</span>
+                                <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded">Ty: {localName}</span>
+                                {isHost && <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">HOST</span>}
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            {(gameState.isDraftStarted || gameState.history.length > 0) && (
+                                <>
+                                    <button onClick={undoMove} className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm text-slate-700"><IconUndo /> Cofnij</button>
+                                    <button onClick={exportImage} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 text-sm shadow-sm"><IconDownload /> Obraz</button>
+                                </>
+                            )}
+                            {isHost && (
+                                <button onClick={resetRoom} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 flex items-center gap-1 text-sm ml-2"><IconReset /> Reset Gry</button>
+                            )}
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        
+                        {/* LEWA KOLUMNA: SKOCZKOWIE */}
+                        <div className="lg:col-span-7 xl:col-span-8">
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-[calc(100vh-200px)] flex flex-col">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="font-bold text-slate-700">Dostępni Skoczkowie</h2>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Szukaj..." 
+                                        className="border p-2 rounded-lg text-sm w-48"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                                
+                                <div className="jumper-list flex-grow overflow-y-auto pr-2 pb-2">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                                        {getFilteredJumpers().map(jumper => {
+                                            const isTaken = gameState.selections[jumper.id];
+                                            let cardClass = "jumper-card p-3 rounded-lg border flex flex-col items-center text-center cursor-pointer select-none relative overflow-hidden bg-white border-slate-200";
+                                            
+                                            if (isTaken) {
+                                                cardClass = "jumper-card p-3 rounded-lg border flex flex-col items-center text-center select-none relative overflow-hidden bg-slate-50 border-slate-100 disabled";
+                                            } else if (isMyTurn) {
+                                                cardClass += " hover:border-blue-400 my-turn";
+                                            }
+
+                                            return (
+                                                <div 
+                                                    key={jumper.id}
+                                                    onClick={() => selectJumper(jumper)}
+                                                    className={cardClass}
+                                                >
+                                                    <img 
+                                                        src={getFlagUrl(jumper.country)} 
+                                                        alt={jumper.country}
+                                                        className="w-8 h-6 object-cover mb-2 shadow-sm rounded-sm"
+                                                        crossOrigin="anonymous"
+                                                    />
+                                                    <span className={`font-semibold text-sm ${isTaken ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                                                        {jumper.name}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 font-mono">{jumper.country}</span>
+                                                    
+                                                    {isTaken && (
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-slate-200/20">
+                                                            <span className="text-red-500 font-bold text-4xl opacity-40">✕</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* PRAWA KOLUMNA: KOSZYKI */}
+                        <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
+                            {/* Status Bar */}
+                            {!isDraftComplete && (
+                                <div className="bg-blue-600 text-white p-4 rounded-xl shadow-lg text-center sticky top-4 z-20 border border-blue-700">
+                                    <div className="text-xs uppercase opacity-80 font-semibold tracking-wide mb-1">Runda {Math.floor(gameState.currentTurnIndex / gameState.players.length) + 1} / 6</div>
+                                    <div className="text-2xl font-bold flex flex-col items-center">
+                                        <span className="text-sm font-normal opacity-90">Teraz wybiera:</span>
+                                        <span className="text-3xl mt-1">{currentPlayer ? currentPlayer.name : "..."} {isMyTurn && "(Ty!)"}</span>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {isDraftComplete && (
+                                <div className="bg-green-600 text-white p-4 rounded-xl shadow-lg text-center border border-green-700">
+                                    <div className="text-2xl font-bold">Draft Zakończony! 🏁</div>
+                                    <p className="text-sm mt-2 opacity-90">Możesz pobrać wyniki jako obraz.</p>
+                                </div>
+                            )}
+
+                            <div id="teams-container" className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
+                                <div className="text-center pb-2 border-b border-slate-300 mb-2">
+                                    <h2 className="font-bold text-lg text-slate-600">SKŁADY DRUŻYN</h2>
+                                </div>
+                                
+                                {gameState.players.map(player => {
+                                    const playerJumpers = INITIAL_JUMPERS.filter(j => gameState.selections[j.id] === player.id);
+                                    const isCurrent = !isDraftComplete && currentPlayer?.id === player.id;
+                                    
+                                    return (
+                                        <div 
+                                            key={player.id} 
+                                            className={`team-box bg-white p-4 rounded-lg shadow-sm border ${isCurrent ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}
+                                        >
+                                            <div className="flex justify-between items-center mb-3 border-b pb-2">
+                                                <h3 className="font-bold text-lg text-slate-800">{player.name}</h3>
+                                                <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">
+                                                    {playerJumpers.length}/6
+                                                </span>
+                                            </div>
+                                            
+                                            <ul className="space-y-2">
+                                                {playerJumpers.map((j, idx) => (
+                                                    <li key={j.id} className="flex items-center gap-2 text-sm">
+                                                        <img 
+                                                            src={getFlagUrl(j.country)} 
+                                                            alt={j.country}
+                                                            className="w-6 h-4 object-cover shadow-sm rounded-sm"
+                                                            crossOrigin="anonymous"
+                                                        />
+                                                        <span className="font-medium text-slate-700">{j.name}</span>
+                                                        {idx === 5 && <span className="ml-auto text-[10px] uppercase font-bold text-orange-500 border border-orange-200 px-1 rounded">REZ</span>}
+                                                    </li>
+                                                ))}
+                                                {Array.from({ length: 6 - playerJumpers.length }).map((_, i) => (
+                                                    <li key={`e-${i}`} className="flex items-center gap-2 text-sm text-slate-300 italic border-b border-dashed border-slate-100 pb-1">
+                                                        <span className="text-lg opacity-50">🏳️</span>
+                                                        <span>...</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+    </script>
+</body>
+</html>
