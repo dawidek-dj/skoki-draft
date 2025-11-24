@@ -471,6 +471,44 @@
                 return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
             };
 
+            // --- NOWY HELPER DO PANELU STATUSU (ABY UŻYĆ GO 2 RAZY: MOBILE I DESKTOP) ---
+            const renderStatusPanel = (className) => {
+                if (isDraftComplete) return null;
+
+                // Logika Double Pick (Snake Draft)
+                let statusMessage = isMyTurn ? "✅ TWOJA KOLEJ! Wybierz 1 zawodnika" : "";
+                
+                const nextOwnerId = turnOrder[gameState.currentTurnIndex + 1];
+                const prevOwnerId = turnOrder[gameState.currentTurnIndex - 1];
+                
+                if (isMyTurn) {
+                    // Sytuacja: Jestem teraz i będę następny (koniec rundy 1, 3, 5...)
+                    if (nextOwnerId === user.uid) {
+                        statusMessage = "🔥 TWOJA KOLEJ! Wybierasz 2 zawodników (1/2)";
+                    }
+                    // Sytuacja: Byłem przed chwilą i jestem teraz (początek rundy 2, 4, 6...)
+                    else if (prevOwnerId === user.uid) {
+                        statusMessage = "⚡ TWÓJ DRUGI WYBÓR (2/2)";
+                    }
+                }
+
+                return (
+                    <div className={`p-4 rounded-xl shadow-lg text-center border transition-colors duration-300 ${isMyTurn ? 'bg-green-600 border-green-700 text-white scale-102 shadow-green-500/20' : 'bg-blue-600 border-blue-700 text-white'} ${className}`}>
+                        <div className="text-xs uppercase opacity-80 font-semibold tracking-wide mb-1">Runda {Math.floor(gameState.currentTurnIndex / gameState.players.length) + 1} / 6</div>
+                        <div className="text-2xl font-bold flex flex-col items-center">
+                            <span className="text-sm font-normal opacity-90">Teraz wybiera:</span>
+                            <span className="text-3xl mt-1">{currentPlayer ? currentPlayer.name : "..."} {isMyTurn && "(Ty!)"}</span>
+                        </div>
+                        {isMyTurn && (
+                            <div className="mt-3 pt-2 border-t border-white/30 text-sm font-bold animate-pulse bg-white/10 rounded py-1 px-2">
+                                {statusMessage}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+
             // --- RENDER ---
             if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="loader"></div></div>;
             
@@ -629,6 +667,9 @@
                         </div>
                     </header>
 
+                    {/* STATUS PANEL: WIDOCZNY TYLKO NA MOBILE (lg:hidden) */}
+                    {renderStatusPanel("lg:hidden mb-6")}
+
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         <div className="lg:col-span-7 xl:col-span-8">
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-[calc(100vh-200px)] flex flex-col">
@@ -660,20 +701,10 @@
                             </div>
                         </div>
                         <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
-                            {!isDraftComplete && (
-                                <div className={`p-4 rounded-xl shadow-lg text-center sticky top-4 z-20 border transition-colors duration-300 ${isMyTurn ? 'bg-green-600 border-green-700 text-white scale-105' : 'bg-blue-600 border-blue-700 text-white'}`}>
-                                    <div className="text-xs uppercase opacity-80 font-semibold tracking-wide mb-1">Runda {Math.floor(gameState.currentTurnIndex / gameState.players.length) + 1} / 6</div>
-                                    <div className="text-2xl font-bold flex flex-col items-center">
-                                        <span className="text-sm font-normal opacity-90">Teraz wybiera:</span>
-                                        <span className="text-3xl mt-1">{currentPlayer ? currentPlayer.name : "..."} {isMyTurn && "(Ty!)"}</span>
-                                    </div>
-                                    {isMyTurn && (
-                                        <div className="mt-3 pt-2 border-t border-white/30 text-sm font-bold animate-pulse bg-white/10 rounded py-1 px-2">
-                                            ✅ TWOJA KOLEJ! Wybierz 1 zawodnika
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                            
+                            {/* STATUS PANEL: WIDOCZNY TYLKO NA DESKTOP (hidden lg:block) */}
+                            {renderStatusPanel("hidden lg:block sticky top-4 z-20")}
+
                             <div id="teams-container" className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
                                 <div className="text-center pb-2 border-b border-slate-300 mb-2"><h2 className="font-bold text-lg text-slate-600">SKŁADY DRUŻYN</h2></div>
                                 {gameState.players.map(player => {
