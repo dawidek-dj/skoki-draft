@@ -61,26 +61,15 @@
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- KONFIGURACJA (DLA GITHUB/WŁASNEGO SERWERA) ---
-        // Aby strona działała na GitHub Pages, wklej poniżej obiekt konfiguracyjny ze swojego projektu Firebase.
-        // Instrukcja: Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration -> Config
-const customConfig = {
-  apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
-  authDomain: "skoki-draft.firebaseapp.com",
-  projectId: "skoki-draft",
-  storageBucket: "skoki-draft.firebasestorage.app",
-  messagingSenderId: "924643436062",
-  appId: "1:924643436062:web:075af64db6eb796175f00f",
-  measurementId: "G-3YM0YNPRW3"
-};
-        // Przykład:
-        // const customConfig = {
-        //   apiKey: "AIzaSy...",
-        //   authDomain: "twoj-projekt.firebaseapp.com",
-        //   projectId: "twoj-projekt",
-        //   storageBucket: "twoj-projekt.appspot.com",
-        //   messagingSenderId: "...",
-        //   appId: "..."
-        // };
+        const customConfig = {
+          apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
+          authDomain: "skoki-draft.firebaseapp.com",
+          projectId: "skoki-draft",
+          storageBucket: "skoki-draft.firebasestorage.app",
+          messagingSenderId: "924643436062",
+          appId: "1:924643436062:web:075af64db6eb796175f00f",
+          measurementId: "G-3YM0YNPRW3"
+        };
 
         // Logika wyboru konfiguracji
         let firebaseConfig;
@@ -101,7 +90,6 @@ const customConfig = {
             const auth = getAuth(app);
             const db = getFirestore(app);
 
-            // Eksport do window, aby React mógł korzystać
             window.db = db;
             window.auth = auth;
             window.appId = currentAppId;
@@ -116,7 +104,6 @@ const customConfig = {
             window.arrayUnion = arrayUnion;
             window.runTransaction = runTransaction;
             
-            // Flaga gotowości
             window.isFirebaseReady = true;
         }
     </script>
@@ -525,7 +512,6 @@ const customConfig = {
                                                     <li key={j.id} className="flex items-center gap-3 text-sm bg-white p-2 rounded border border-slate-100 shadow-sm">
                                                         <img src={getFlagUrl(j.country)} alt={j.country} className="w-6 h-4 object-cover rounded-sm shadow-sm" />
                                                         <span className="font-semibold text-slate-700 flex-grow">{j.name}</span>
-                                                        {idx === 5 && <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">REZ</span>}
                                                     </li>
                                                 ))}
                                             </ul>
@@ -641,7 +627,6 @@ const customConfig = {
                                                     <li key={j.id} className="flex items-center gap-2 text-sm">
                                                         <img src={getFlagUrl(j.country)} alt={j.country} className="w-6 h-4 object-cover shadow-sm rounded-sm" crossOrigin="anonymous" />
                                                         <span className="font-medium text-slate-700">{j.name}</span>
-                                                        {idx === 5 && <span className="ml-auto text-[10px] uppercase font-bold text-orange-500 border border-orange-200 px-1 rounded">REZ</span>}
                                                     </li>
                                                 ))}
                                                 {Array.from({ length: 6 - playerJumpers.length }).map((_, i) => (
@@ -678,6 +663,7 @@ const customConfig = {
 </body>
 
 </html>
+
 
 
 
