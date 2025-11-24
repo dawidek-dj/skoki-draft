@@ -151,7 +151,7 @@ const customConfig = {
         }
 
         // --- DANE ---
-        const COUNTRY_ISO = { 'AUT': 'at', 'BUL': 'bg', 'CZ': 'cz', 'GER': 'de', 'SLO': 'si', 'NOR': 'no', 'POL': 'pl', 'JPN': 'jp', 'SUI': 'ch', 'FIN': 'fi', 'ITA': 'it', 'USA': 'us', 'EST': 'ee', 'UKR': 'ua', 'TUR': 'tr', 'FRA': 'fr', 'ROU': 'ro', 'CAN': 'ca', 'KAZ': 'kz' };
+        const COUNTRY_ISO = { 'AUT': 'at', 'BUL': 'bg', 'CZ': 'cz', 'GER': 'de', 'SLO': 'si', 'NOR': 'no', 'POL': 'pl', 'JPN': 'jp', 'SUI': 'ch', 'FIN': 'fi', 'ITA': 'it', 'USA': 'us', 'EST': 'ee', 'UKR': 'ua', 'TUR': 'tr', 'FRA': 'fr', 'ROU': 'ro', 'CAN': 'ca', 'KAZ': 'kz', 'SK': 'sk'};
         const getFlagUrl = (country3) => `https://flagcdn.com/w40/${COUNTRY_ISO[country3] || 'xx'}.png`;
 
         const INITIAL_JUMPERS = [
@@ -163,17 +163,18 @@ const customConfig = {
 			{ id: 22, name: "Valentin Foubert", country: "FRA" }, { id: 23, name: "Enzo Milesi", country: "FRA" }, { id: 24, name: "Jules Chervet", country: "FRA" },
 			{ id: 25, name: "Ryoyu Kobayashi", country: "JPN" }, { id: 26, name: "Sakutaro Kobayashi", country: "JPN" }, { id: 27, name: "Tomofumi Naito", country: "JPN" }, { id: 28, name: "Naoki Nakamura", country: "JPN" }, { id: 29, name: "Ren Nikaido", country: "JPN" }, { id: 30, name: "Junshirō Kobayashi", country: "JPN" },  { id: 31, name: "Keiichi Sato", country: "JPN" }, { id: 32, name: "Yukiya Sato", country: "JPN" },
 			{ id: 33, name: "Mackenzie Boyd-Clowes", country: "CAN" },
-			{ id: 34, name: "Danił Wasiljew", country: "KAZ" },
-            { id: 35, name: "Karl Geiger", country: "GER" }, { id: 36, name: "Felix Hoffmann", country: "GER" }, { id: 37, name: "Pius Paschke", country: "GER" }, { id: 38, name: "Philipp Raimund", country: "GER" }, { id: 39, name: "Luca Roth", country: "GER" }, { id: 40, name: "Constantin Schmid", country: "GER" }, { id: 41, name: "Adrian Tittel", country: "GER" }, { id: 42, name: "Andreas Wellinger", country: "GER" },  
-            { id: 43, name: "Johann Andre Forfang", country: "NOR" }, { id: 44, name: "Halvor Egner Granerud", country: "NOR" }, { id: 45, name: "Bendik Jakobsen Heggli", country: "NOR" }, { id: 46, name: "Marius Lindvik", country: "NOR" }, { id: 47, name: "Benjamin Oestvold", country: "NOR" }, { id: 48, name: "Robin Pedersen", country: "NOR" }, { id: 49, name: "Kristoffer Eriksen Sundal", country: "NOR" }, { id: 50, name: "Fredrik Villumstad", country: "NOR" },
-            { id: 51, name: "Maciej Kot", country: "POL" }, { id: 52, name: "Dawid Kubacki", country: "POL" }, { id: 53, name: "Kamil Stoch", country: "POL" }, { id: 54, name: "Kacper Tomasiak", country: "POL" }, { id: 55, name: "Paweł Wąsek", country: "POL" }, { id: 56, name: "Jakub Wolny", country: "POL" }, { id: 57, name: "Aleksander Zniszczoł", country: "POL" }, { id: 58, name: "Piotr Żyła", country: "POL" },
-			{ id: 59, name: "Daniel Andrei Cacina", country: "ROU" },			
-            { id: 60, name: "Enej Faletic", country: "SLO" }, { id: 61, name: "Ziga Jancar", country: "SLO" }, { id: 62, name: "Ziga Jelar", country: "SLO" }, { id: 63, name: "Lovro Kos", country: "SLO" }, { id: 64, name: "Anze Lanisek", country: "SLO" }, { id: 65, name: "Rok Oblak", country: "SLO" }, { id: 66, name: "Domen Prevc", country: "SLO" }, { id: 67, name: "Timi Zajc", country: "SLO" },   
-            { id: 68, name: "Simon Ammann", country: "SUI" }, { id: 69, name: "Gregor Deschwanden", country: "SUI" }, { id: 70, name: "Sandro Hauswirth", country: "SUI" }, { id: 71, name: "Juri Kesseli", country: "SUI" }, { id: 72, name: "Killian Peier", country: "SUI" }, { id: 73, name: "Felix Trunz", country: "SUI" }, { id: 74, name: "Remo Imhof", country: "SUI" },
-			{ id: 75, name: "Fatih Arda Ipcioglu", country: "TUR" },
-			{ id: 76, name: "Yevhen Marusiak", country: "UKR" }, 			
-            { id: 77, name: "Erik Belshaw", country: "USA" }, { id: 78, name: "Kevin Bickner", country: "USA" }, { id: 79, name: "Jason Colby", country: "USA" }, { id: 80, name: "Tate Frantz", country: "USA" }, { id: 81, name: "Andrew Urlaub", country: "USA" },
-			{ id: 82, name: "Giovanni Bresadola", country: "ITA" }, { id: 83, name: "Alex Insam", country: "ITA" },     
+			{ id: 34, name: "Danił Wasiljew", country: "KAZ" }, { id: 35, name: "Ilya Miziernych", country: "KAZ" },
+            { id: 36, name: "Karl Geiger", country: "GER" }, { id: 7, name: "Felix Hoffmann", country: "GER" }, { id: 38, name: "Pius Paschke", country: "GER" }, { id: 39, name: "Philipp Raimund", country: "GER" }, { id: 40, name: "Luca Roth", country: "GER" }, { id: 41, name: "Constantin Schmid", country: "GER" }, { id: 42, name: "Adrian Tittel", country: "GER" }, { id: 43, name: "Andreas Wellinger", country: "GER" },  
+            { id: 44, name: "Johann Andre Forfang", country: "NOR" }, { id: 45, name: "Halvor Egner Granerud", country: "NOR" }, { id: 46, name: "Bendik Jakobsen Heggli", country: "NOR" }, { id: 47, name: "Marius Lindvik", country: "NOR" }, { id: 48, name: "Benjamin Oestvold", country: "NOR" }, { id: 49, name: "Robin Pedersen", country: "NOR" }, { id: 50, name: "Kristoffer Eriksen Sundal", country: "NOR" }, { id: 51, name: "Fredrik Villumstad", country: "NOR" }, { id: 52, name: "Isak Andreas Langmo", country: "NOR" },
+            { id: 53, name: "Maciej Kot", country: "POL" }, { id: 54, name: "Dawid Kubacki", country: "POL" }, { id: 55, name: "Kamil Stoch", country: "POL" }, { id: 56, name: "Kacper Tomasiak", country: "POL" }, { id: 57, name: "Paweł Wąsek", country: "POL" }, { id: 58, name: "Jakub Wolny", country: "POL" }, { id: 59, name: "Aleksander Zniszczoł", country: "POL" }, { id: 60, name: "Piotr Żyła", country: "POL" },
+			{ id: 61, name: "Daniel Andrei Cacina", country: "ROU" },
+			{ id: 62, name: "Hektor Kapustík ", country: "SK" },
+            { id: 63, name: "Enej Faletic", country: "SLO" }, { id: 64, name: "Ziga Jancar", country: "SLO" }, { id: 65, name: "Ziga Jelar", country: "SLO" }, { id: 66, name: "Lovro Kos", country: "SLO" }, { id: 67, name: "Anze Lanisek", country: "SLO" }, { id: 68, name: "Rok Oblak", country: "SLO" }, { id: 69, name: "Domen Prevc", country: "SLO" }, { id: 70, name: "Timi Zajc", country: "SLO" },   
+            { id: 71, name: "Simon Ammann", country: "SUI" }, { id: 72, name: "Gregor Deschwanden", country: "SUI" }, { id: 73, name: "Sandro Hauswirth", country: "SUI" }, { id: 74, name: "Juri Kesseli", country: "SUI" }, { id: 75, name: "Killian Peier", country: "SUI" }, { id: 76, name: "Felix Trunz", country: "SUI" }, { id: 77, name: "Remo Imhof", country: "SUI" },
+			{ id: 78, name: "Fatih Arda Ipcioglu", country: "TUR" },
+			{ id: 79, name: "Yevhen Marusiak", country: "UKR" }, { id: 80, name: "Vitaliy Kalinichenko", country: "UKR" },	
+            { id: 81, name: "Erik Belshaw", country: "USA" }, { id: 82, name: "Kevin Bickner", country: "USA" }, { id: 83, name: "Jason Colby", country: "USA" }, { id: 84, name: "Tate Frantz", country: "USA" }, { id: 85, name: "Andrew Urlaub", country: "USA" },
+			{ id: 86, name: "Giovanni Bresadola", country: "ITA" }, { id: 87, name: "Alex Insam", country: "ITA" }, { id: 88, name: "Francesco Cecon", country: "ITA" },      
         ];
 
         const ROBUST_ROUNDS = 6;
@@ -677,6 +678,7 @@ const customConfig = {
 </body>
 
 </html>
+
 
 
 
