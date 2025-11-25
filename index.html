@@ -177,6 +177,7 @@
             hostId: null,
             players: [], 
             selections: {},
+            picks: [], // NOWE: Lista przechowująca kolejność wyborów [{jumperId, playerId}, ...]
             currentTurnIndex: 0,
             isDraftStarted: false,
             history: [],
@@ -477,14 +478,20 @@
             const selectJumper = async (jumper) => {
                 if (!isMyTurn || gameState.selections[jumper.id]) return;
                 
+                // New: Add to picks array for ordering
+                const newPick = { jumperId: jumper.id, playerId: user.uid };
+                const newPicks = [...(gameState.picks || []), newPick];
+
                 const currentSelections = { ...gameState.selections };
                 const newHistory = [...gameState.history, {
                     selections: currentSelections,
+                    picks: gameState.picks || [], // Save picks history
                     currentTurnIndex: gameState.currentTurnIndex
                 }];
                 
                 await updateState({
                     selections: { ...gameState.selections, [jumper.id]: user.uid },
+                    picks: newPicks,
                     currentTurnIndex: gameState.currentTurnIndex + 1,
                     history: newHistory
                 });
@@ -504,6 +511,7 @@
                 
                 await updateState({
                     selections: lastState.selections,
+                    picks: lastState.picks || [], // Restore picks
                     currentTurnIndex: lastState.currentTurnIndex,
                     history: newHistory,
                     undoRequest: null
@@ -523,7 +531,8 @@
                         isDraftStarted: false,
                         history: [],
                         undoRequest: null,
-                        chatMessages: []
+                        chatMessages: [],
+                        picks: []
                     });
                 }
             };
@@ -544,6 +553,29 @@
                 if (!searchTerm) return INITIAL_JUMPERS;
                 const lower = searchTerm.toLowerCase();
                 return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
+            };
+
+            // --- NOWY HELPER: POBIERANIE SKOCZKÓW W KOLEJNOŚCI WYBORU ---
+            const getPlayerJumpers = (playerId) => {
+                // 1. Pobierz ID wszystkich wybranych przez gracza
+                const selectedIds = Object.keys(gameState.selections || {}).map(Number).filter(id => gameState.selections[id] === playerId);
+                
+                // 2. Jeśli brak historii wyborów (stara gra), zwróć standardowo (posortowane po ID)
+                if (!gameState.picks || gameState.picks.length === 0) {
+                    return INITIAL_JUMPERS.filter(j => selectedIds.includes(j.id));
+                }
+
+                // 3. Pobierz ID z historii 'picks' dla tego gracza (to gwarantuje kolejność)
+                const pickedJumperIds = gameState.picks.filter(p => p.playerId === playerId).map(p => p.jumperId);
+                
+                // 4. Mapuj ID na obiekty
+                const orderedJumpers = pickedJumperIds.map(id => INITIAL_JUMPERS.find(j => j.id === id)).filter(Boolean);
+                
+                // 5. (Fallback) Znajdź zawodników, którzy są w 'selections' ale nie w 'picks' (np. błędy, migracja)
+                const missingIds = selectedIds.filter(id => !pickedJumperIds.includes(id));
+                const missingJumpers = INITIAL_JUMPERS.filter(j => missingIds.includes(j.id));
+                
+                return [...orderedJumpers, ...missingJumpers];
             };
 
             // --- HELPER: STATUS PANEL ---
@@ -730,12 +762,14 @@
                         </header>
                         <div id="summary-board" className="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                             <div className="text-center mb-6 pb-4 border-b border-slate-100">
-                                <h2 className="text-3xl font-bold text-slate-800">OFICJALNE SKŁADY</h2>
-                                <p className="text-slate-400 text-sm">Fantasy Draft Skoki Narciarskie</p>
+                                <h2 className="text-3xl font-bold text-slate-800 mb-2">OFICJALNE SKŁADY</h2>
+                                <p className="text-slate-500 font-medium">Fantasy Draft Skoki Narciarskie</p>
+                                <p className="text-slate-400 text-sm mt-1">23.11.2025 (przed drugim konkursem indywidualnym)</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {gameState.players.map(player => {
-                                    const playerJumpers = INITIAL_JUMPERS.filter(j => gameState.selections[j.id] === player.id);
+                                    // UŻYCIE NOWEJ FUNKCJI: Sortowanie po kolejności wyboru
+                                    const playerJumpers = getPlayerJumpers(player.id);
                                     return (
                                         <div key={player.id} className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
                                             <div className="bg-slate-800 text-white p-3 text-center font-bold text-lg">{player.name}</div>
@@ -743,7 +777,9 @@
                                                 {playerJumpers.map((j, idx) => (
                                                     <li key={j.id} className="flex items-center gap-3 text-sm bg-white p-2 rounded border border-slate-100 shadow-sm">
                                                         <img src={getFlagUrl(j.country)} alt={j.country} className="w-6 h-4 object-cover rounded-sm shadow-sm" />
-                                                        <span className="font-semibold text-slate-700 flex-grow">{j.name}</span>
+                                                        {/* ZMIANA: Wyśrodkowanie tekstu i balansowanie flagi */}
+                                                        <span className="font-semibold text-slate-700 flex-1 text-center">{j.name}</span>
+                                                        <div className="w-6"></div> {/* Spacer równoważący flagę */}
                                                     </li>
                                                 ))}
                                             </ul>
@@ -847,7 +883,8 @@
                             <div id="teams-container" className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
                                 <div className="text-center pb-2 border-b border-slate-300 mb-2"><h2 className="font-bold text-lg text-slate-600">SKŁADY DRUŻYN</h2></div>
                                 {gameState.players.map(player => {
-                                    const playerJumpers = INITIAL_JUMPERS.filter(j => gameState.selections[j.id] === player.id);
+                                    // UŻYCIE NOWEJ FUNKCJI: Sortowanie po kolejności wyboru
+                                    const playerJumpers = getPlayerJumpers(player.id);
                                     const isCurrent = !isDraftComplete && currentPlayer?.id === player.id;
                                     return (
                                         <div key={player.id} className={`team-box bg-white p-4 rounded-lg shadow-sm border ${isCurrent ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}>
@@ -899,4 +936,3 @@
 </body>
 
 </html>
-
