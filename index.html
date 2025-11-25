@@ -20,7 +20,7 @@
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
 
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; padding-bottom: 80px; /* Miejsce na chat */ }
         
         .jumper-card { transition: all 0.2s; }
         .jumper-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -38,11 +38,11 @@
         .jumper-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .jumper-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        @keyframes slideInTop {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
-        .toast { animation: slideIn 0.3s ease-out forwards; }
+        .toast-item { animation: slideInTop 0.3s ease-out forwards; transition: all 0.3s; }
         
         .request-alert { animation: pulse-border 2s infinite; }
         @keyframes pulse-border {
@@ -50,6 +50,10 @@
             70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
+
+        .chat-bar { box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .chat-history::-webkit-scrollbar { width: 6px; }
+        .chat-history::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -71,7 +75,6 @@
           measurementId: "G-3YM0YNPRW3"
         };
 
-        // Logika wyboru konfiguracji
         let firebaseConfig;
         let currentAppId = 'default-app-id';
 
@@ -121,6 +124,8 @@
         const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
         const IconX = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 18 18"/></svg>;
         const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+        const IconSend = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>;
+        const IconMessage = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 
         // --- ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
@@ -174,23 +179,20 @@
             currentTurnIndex: 0,
             isDraftStarted: false,
             history: [],
-            undoRequest: null // { playerId, playerName }
+            undoRequest: null,
+            chatMessages: [] // Array of {id, text, author, timestamp}
         };
 
         // Helper do ścieżki
         const getRoomDocRef = (roomName) => {
              const safeName = roomName.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
-             // Obsługa własnego hostingu
              const collectionName = (window.appId === 'custom-app') ? 'draft_rooms' : 'rooms';
-             // Jeśli nie jesteśmy w środowisku Google (brak appId), też użyj prostej ścieżki
              if (!window.appId) {
                  return window.doc(window.db, 'draft_rooms', `room_${safeName}`);
              }
-             // Ścieżka dla środowiska podglądu
              if (window.appId === 'default-app-id' || window.appId.startsWith('canvas')) {
                  return window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'rooms', `room_${safeName}`);
              }
-             // Domyślna prosta ścieżka
              return window.doc(window.db, 'draft_rooms', `room_${safeName}`);
         };
 
@@ -201,7 +203,15 @@
             const [localName, setLocalName] = useState("");
             const [loading, setLoading] = useState(true);
             const [errorMsg, setErrorMsg] = useState(null);
-            const [toastMsg, setToastMsg] = useState(null);
+            
+            // Toast & Chat State
+            const [toasts, setToasts] = useState([]); // Queue of visible toasts
+            const [chatInput, setChatInput] = useState("");
+            const [showChat, setShowChat] = useState(false);
+            const chatEndRef = useRef(null);
+
+            // Password state
+            const [adminPassword, setAdminPassword] = useState("");
 
             const [gameState, setGameState] = useState(DEFAULT_STATE);
             const [searchTerm, setSearchTerm] = useState('');
@@ -209,6 +219,8 @@
             // Refs do śledzenia zmian
             const prevPlayersLength = useRef(0);
             const prevSelectionsRef = useRef({});
+            const lastChatLength = useRef(0); // To track new messages specifically
+            const isFirstSync = useRef(true); // To prevent spam on load
 
             // 1. Auth Logic
             useEffect(() => {
@@ -220,11 +232,9 @@
 
                 const initAuth = async () => {
                     try {
-                        // Próba logowania anonimowego (najbardziej uniwersalna)
                         await window.signInAnonymously(window.auth);
                     } catch (err) {
                         console.error("Auth error:", err);
-                        // Jeśli anonimowe nie działa, sprawdź czy jest token (tylko w podglądzie)
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             try {
                                 await window.signInWithCustomToken(window.auth, __initial_auth_token);
@@ -241,22 +251,55 @@
                 return window.onAuthStateChanged(window.auth, (u) => setUser(u));
             }, []);
 
+            // Helper to add toast
+            const addToast = (text, type = 'info') => {
+                const id = Date.now() + Math.random();
+                setToasts(prev => [...prev, { id, text, type }]);
+                setTimeout(() => {
+                    setToasts(prev => prev.filter(t => t.id !== id));
+                }, 5000);
+            };
+
             // 2. Sync & Notifications Logic
             useEffect(() => {
                 if (!user || !isJoined || !roomName) return;
                 const docRef = getRoomDocRef(roomName);
+                
                 const unsub = window.onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        setGameState({ ...DEFAULT_STATE, ...data });
+                        
+                        // Merge logic to handle array correctly
+                        setGameState(prev => ({
+                            ...DEFAULT_STATE, 
+                            ...data,
+                            chatMessages: data.chatMessages || [] 
+                        }));
+
+                        // Initial Setup for chat index
+                        if (isFirstSync.current) {
+                            lastChatLength.current = (data.chatMessages || []).length;
+                            isFirstSync.current = false;
+                        } else {
+                            // Check for new chat messages
+                            const msgs = data.chatMessages || [];
+                            if (msgs.length > lastChatLength.current) {
+                                const newMsgs = msgs.slice(lastChatLength.current);
+                                newMsgs.forEach(msg => {
+                                    if (msg.author !== localName) {
+                                        addToast(`💬 ${msg.author}: ${msg.text}`, 'chat');
+                                    }
+                                });
+                                lastChatLength.current = msgs.length;
+                            }
+                        }
 
                         // Automatyczne usuwanie (Kick)
                         if (data.players && data.players.length > 0) {
                              const amIInList = data.players.find(p => p.id === user.uid);
                              if (!amIInList && !data.isDraftStarted) {
                                  setIsJoined(false);
-                                 setToastMsg("Zostałeś usunięty z pokoju przez hosta.");
-                                 setTimeout(() => setToastMsg(null), 4000);
+                                 addToast("Zostałeś usunięty z pokoju przez hosta.", 'error');
                              }
                         }
                     }
@@ -265,7 +308,7 @@
                     setErrorMsg("Problem z połączeniem.");
                 });
                 return () => unsub();
-            }, [user, isJoined, roomName]);
+            }, [user, isJoined, roomName, localName]);
 
             // 3. Powiadomienia: Nowy Gracz + Wybory Rywali
             useEffect(() => {
@@ -275,8 +318,7 @@
                 const isHost = user.uid === gameState.hostId;
                 const currentCount = gameState.players ? gameState.players.length : 0;
                 if (isHost && currentCount > prevPlayersLength.current && prevPlayersLength.current > 0) {
-                    setToastMsg("Nowy gracz dołączył!");
-                    setTimeout(() => setToastMsg(null), 3000);
+                    addToast("Nowy gracz dołączył!");
                 }
                 prevPlayersLength.current = currentCount;
 
@@ -286,30 +328,30 @@
                 const currentKeys = Object.keys(currentSelections);
                 const prevKeys = Object.keys(prevSelections);
 
-                // Jeśli przybyło wyborów (nie undo)
                 if (currentKeys.length > prevKeys.length) {
-                    // Znajdź dodany klucz
                     const newKey = currentKeys.find(k => !prevSelections[k]);
                     if (newKey) {
                         const jumperId = parseInt(newKey);
                         const playerId = currentSelections[newKey];
-                        
-                        // Sprawdź, czy to nie ja wybrałem (żeby nie spamować sobie)
                         if (playerId !== user.uid) {
                             const jumper = INITIAL_JUMPERS.find(j => j.id === jumperId);
                             const player = gameState.players.find(p => p.id === playerId);
-                            
                             if (jumper && player) {
-                                setToastMsg(`📢 ${player.name} wybrał: ${jumper.name}`);
-                                setTimeout(() => setToastMsg(null), 4000);
+                                addToast(`📢 ${player.name} wybrał: ${jumper.name}`, 'pick');
                             }
                         }
                     }
                 }
-                // Aktualizuj ref
                 prevSelectionsRef.current = currentSelections;
 
             }, [gameState.players, gameState.hostId, gameState.selections, user, isJoined]);
+
+            // Auto scroll chat
+            useEffect(() => {
+                if (showChat && chatEndRef.current) {
+                    chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+            }, [gameState.chatMessages, showChat]);
 
             // Logika
             const turnOrder = useMemo(() => {
@@ -335,9 +377,44 @@
                 await window.updateDoc(docRef, newState);
             };
 
+            // CHAT FUNCTION
+            const sendChat = async (e) => {
+                e.preventDefault();
+                if (!chatInput.trim()) return;
+                
+                const docRef = getRoomDocRef(roomName);
+                const newMessage = {
+                    id: Date.now() + Math.random(),
+                    text: chatInput.trim(),
+                    author: localName,
+                    timestamp: Date.now()
+                };
+
+                try {
+                    await window.updateDoc(docRef, {
+                        chatMessages: window.arrayUnion(newMessage)
+                    });
+                    setChatInput("");
+                    if (!showChat) setShowChat(true); // Auto open on send
+                } catch (e) {
+                    console.error("Chat send error:", e);
+                }
+            };
+
             // JOIN / RECOVERY
             const joinRoom = async () => {
                 if (!roomName.trim() || !localName.trim()) return;
+
+                // BASIC SECURITY (CLIENT-SIDE)
+                if (localName.trim().toLowerCase() === "dawid") {
+                    // Zabezpieczenie: hasło 'admin69' zakodowane w Base64 to 'YWRtaW42OQ=='
+                    // Dzięki temu "kolega" nie zobaczy hasła wprost w if-ie.
+                    if (btoa(adminPassword) !== "YWRtaW42OQ==") {
+                        alert("Niepoprawne hasło dla nicku Dawid!");
+                        return;
+                    }
+                }
+
                 const docRef = getRoomDocRef(roomName);
                 
                 try {
@@ -406,10 +483,14 @@
 
             const selectJumper = async (jumper) => {
                 if (!isMyTurn || gameState.selections[jumper.id]) return;
+                
+                // Deep copy logic safe for history
+                const currentSelections = { ...gameState.selections };
                 const newHistory = [...gameState.history, {
-                    selections: gameState.selections,
+                    selections: currentSelections,
                     currentTurnIndex: gameState.currentTurnIndex
                 }];
+                
                 await updateState({
                     selections: { ...gameState.selections, [jumper.id]: user.uid },
                     currentTurnIndex: gameState.currentTurnIndex + 1,
@@ -428,6 +509,8 @@
                 if (gameState.history.length === 0) return;
                 const lastState = gameState.history[gameState.history.length - 1];
                 const newHistory = gameState.history.slice(0, -1);
+                
+                // Force replace selections to ensure UI updates properly
                 await updateState({
                     selections: lastState.selections,
                     currentTurnIndex: lastState.currentTurnIndex,
@@ -448,7 +531,8 @@
                         currentTurnIndex: 0,
                         isDraftStarted: false,
                         history: [],
-                        undoRequest: null
+                        undoRequest: null,
+                        chatMessages: []
                     });
                 }
             };
@@ -471,22 +555,21 @@
                 return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
             };
 
-            // --- NOWY HELPER DO PANELU STATUSU (ABY UŻYĆ GO 2 RAZY: MOBILE I DESKTOP) ---
+            // --- HELPER DO PANELU STATUSU ---
             const renderStatusPanel = (className) => {
                 if (isDraftComplete) return null;
 
-                // Logika Double Pick (Snake Draft)
                 let statusMessage = isMyTurn ? "✅ TWOJA KOLEJ! Wybierz 1 zawodnika" : "";
                 
-                const nextOwnerId = turnOrder[gameState.currentTurnIndex + 1];
-                const prevOwnerId = turnOrder[gameState.currentTurnIndex - 1];
-                
+                // Precyzyjne sprawdzanie logiki Snake Draft (double pick)
                 if (isMyTurn) {
-                    // Sytuacja: Jestem teraz i będę następny (koniec rundy 1, 3, 5...)
+                    const currentIndex = gameState.currentTurnIndex;
+                    const nextOwnerId = (currentIndex + 1 < turnOrder.length) ? turnOrder[currentIndex + 1] : null;
+                    const prevOwnerId = (currentIndex > 0) ? turnOrder[currentIndex - 1] : null;
+                    
                     if (nextOwnerId === user.uid) {
                         statusMessage = "🔥 TWOJA KOLEJ! Wybierasz 2 zawodników (1/2)";
                     }
-                    // Sytuacja: Byłem przed chwilą i jestem teraz (początek rundy 2, 4, 6...)
                     else if (prevOwnerId === user.uid) {
                         statusMessage = "⚡ TWÓJ DRUGI WYBÓR (2/2)";
                     }
@@ -508,6 +591,24 @@
                 );
             };
 
+            // --- TOAST CONTAINER COMPONENT ---
+            const ToastContainer = () => (
+                <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+                    {toasts.map(toast => {
+                        let bgColor = "bg-slate-800";
+                        if (toast.type === 'pick') bgColor = "bg-green-600";
+                        if (toast.type === 'chat') bgColor = "bg-blue-600";
+                        if (toast.type === 'error') bgColor = "bg-red-600";
+                        
+                        return (
+                            <div key={toast.id} className={`toast-item text-white px-4 py-3 rounded-lg shadow-lg border border-white/10 flex items-center gap-2 font-medium pointer-events-auto ${bgColor}`}>
+                                {toast.text}
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+
 
             // --- RENDER ---
             if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="loader"></div></div>;
@@ -519,7 +620,6 @@
                             <h1 className="text-4xl mb-4">⛷️</h1>
                             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dołącz do Gry</h2>
                             
-                            {/* Miejsce na komunikat dla GitHub */}
                             {(!window.appId || window.appId === 'default-app-id') && typeof __firebase_config === 'undefined' && (
                                 <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 text-sm rounded">
                                     <b>Uwaga:</b> Skonfiguruj Firebase w pliku HTML, aby gra działała.
@@ -528,6 +628,17 @@
 
                             <div className="space-y-4">
                                 <input className="w-full p-3 border rounded-lg" placeholder="Twój Nick" value={localName} onChange={e => setLocalName(e.target.value)} />
+                                
+                                {localName.trim().toLowerCase() === 'dawid' && (
+                                    <input 
+                                        type="password"
+                                        className="w-full p-3 border rounded-lg border-red-300 bg-red-50 focus:ring-red-500 focus:border-red-500 transition-colors"
+                                        placeholder="Podaj hasło (admin69)" 
+                                        value={adminPassword} 
+                                        onChange={e => setAdminPassword(e.target.value)} 
+                                    />
+                                )}
+
                                 <input className="w-full p-3 border rounded-lg uppercase" placeholder="Nazwa Pokoju (np. SKOKI1)" value={roomName} onChange={e => setRoomName(e.target.value)} />
                                 <button onClick={joinRoom} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700" disabled={!localName || !roomName}>Wejdź</button>
                             </div>
@@ -539,8 +650,8 @@
             // WIDOK: LOBBY
             if (!gameState.isDraftStarted) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-                        {toastMsg && <div className="toast fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">{toastMsg}</div>}
+                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 pb-24">
+                        <ToastContainer />
                         <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-lg">
                             <h1 className="text-2xl font-bold text-center mb-2 text-slate-800">Poczekalnia Lobby</h1>
                             <p className="text-center text-slate-500 mb-6">Pokój: <span className="font-mono font-bold text-blue-600">{roomName.toUpperCase()}</span></p>
@@ -574,6 +685,42 @@
                                 <div className="text-center p-4 bg-gray-50 rounded-lg text-gray-500 animate-pulse border border-gray-200">Oczekiwanie na Hosta...</div>
                             )}
                         </div>
+                        
+                        {/* CHAT BAR LOBBY */}
+                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
+                             {showChat && (
+                                <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
+                                    {(gameState.chatMessages || []).map((msg, i) => (
+                                        <div key={msg.id || i} className="mb-2 text-sm">
+                                            <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
+                                        </div>
+                                    ))}
+                                    {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
+                                    <div ref={chatEndRef} />
+                                </div>
+                            )}
+                            <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
+                                <button 
+                                    onClick={() => setShowChat(!showChat)} 
+                                    className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                    title={showChat ? "Ukryj czat" : "Pokaż czat"}
+                                >
+                                    <IconMessage />
+                                </button>
+                                <form onSubmit={sendChat} className="flex-1 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={chatInput} 
+                                        onChange={e => setChatInput(e.target.value)} 
+                                        placeholder="Napisz wiadomość..." 
+                                        className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
+                                    />
+                                    <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
+                                        <IconSend />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 );
             }
@@ -581,7 +728,7 @@
             // WIDOK: PODSUMOWANIE
             if (isDraftComplete) {
                 return (
-                    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto pb-24">
                         <header className="mb-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><span className="text-3xl">🏆</span> Draft Zakończony!</h1>
@@ -616,13 +763,49 @@
                                 })}
                             </div>
                         </div>
+                         
+                        {/* CHAT BAR SUMMARY */}
+                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
+                             {showChat && (
+                                <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
+                                    {(gameState.chatMessages || []).map((msg, i) => (
+                                        <div key={msg.id || i} className="mb-2 text-sm">
+                                            <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
+                                        </div>
+                                    ))}
+                                    {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
+                                    <div ref={chatEndRef} />
+                                </div>
+                            )}
+                            <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
+                                <button 
+                                    onClick={() => setShowChat(!showChat)} 
+                                    className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                    title={showChat ? "Ukryj czat" : "Pokaż czat"}
+                                >
+                                    <IconMessage />
+                                </button>
+                                <form onSubmit={sendChat} className="flex-1 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={chatInput} 
+                                        onChange={e => setChatInput(e.target.value)} 
+                                        placeholder="Napisz wiadomość..." 
+                                        className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
+                                    />
+                                    <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
+                                        <IconSend />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 );
             }
 
             // WIDOK: GRA (DRAFT)
             return (
-                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto relative">
+                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto relative pb-24">
                     {isHost && gameState.undoRequest && (
                         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-lg shadow-2xl border-2 border-red-500 p-4 flex flex-col items-center gap-3 request-alert">
                             <div className="flex items-center gap-2 text-red-600 font-bold">
@@ -636,7 +819,8 @@
                         </div>
                     )}
 
-                    {toastMsg && <div className="toast fixed top-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg z-50 border border-slate-600 flex items-center gap-2 font-medium">{toastMsg}</div>}
+                    <ToastContainer />
+                    
                     <header className="mb-6 flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                         <div>
                             <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><span className="text-3xl">⛷️</span> Fantasy Draft</h1>
@@ -733,6 +917,43 @@
                             </div>
                         </div>
                     </div>
+
+                     {/* CHAT BAR IN GAME */}
+                     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
+                         {showChat && (
+                            <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
+                                {(gameState.chatMessages || []).map((msg, i) => (
+                                    <div key={msg.id || i} className="mb-2 text-sm">
+                                        <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
+                                    </div>
+                                ))}
+                                {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
+                                <div ref={chatEndRef} />
+                            </div>
+                        )}
+                        <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
+                            <button 
+                                onClick={() => setShowChat(!showChat)} 
+                                className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                title={showChat ? "Ukryj czat" : "Pokaż czat"}
+                            >
+                                <IconMessage />
+                            </button>
+                            <form onSubmit={sendChat} className="flex-1 flex gap-2">
+                                <input 
+                                    type="text" 
+                                    value={chatInput} 
+                                    onChange={e => setChatInput(e.target.value)} 
+                                    placeholder="Napisz wiadomość..." 
+                                    className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
+                                />
+                                <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
+                                    <IconSend />
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
                 </div>
             );
         };
