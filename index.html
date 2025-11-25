@@ -20,7 +20,7 @@
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
 
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; padding-bottom: 80px; /* Miejsce na chat */ }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; padding-bottom: 60px; /* Miejsce na zwinięty chat */ }
         
         .jumper-card { transition: all 0.2s; }
         .jumper-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -51,9 +51,10 @@
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
 
-        .chat-bar { box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .chat-history::-webkit-scrollbar { width: 6px; }
-        .chat-history::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        /* Style dla nowego czatu */
+        .chat-widget { transition: all 0.3s ease-in-out; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
+        .chat-history::-webkit-scrollbar { width: 4px; }
+        .chat-history::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 2px; }
     </style>
 </head>
 <body>
@@ -64,7 +65,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- KONFIGURACJA (DLA GITHUB/WŁASNEGO SERWERA) ---
+        // --- KONFIGURACJA ---
         const customConfig = {
           apiKey: "AIzaSyAL1X0Tl5NocOjqqqIv-SewSKLxRyZ31_M",
           authDomain: "skoki-draft.firebaseapp.com",
@@ -180,7 +181,7 @@
             isDraftStarted: false,
             history: [],
             undoRequest: null,
-            chatMessages: [] // Array of {id, text, author, timestamp}
+            chatMessages: [] 
         };
 
         // Helper do ścieżki
@@ -205,9 +206,9 @@
             const [errorMsg, setErrorMsg] = useState(null);
             
             // Toast & Chat State
-            const [toasts, setToasts] = useState([]); // Queue of visible toasts
+            const [toasts, setToasts] = useState([]); 
             const [chatInput, setChatInput] = useState("");
-            const [showChat, setShowChat] = useState(false);
+            const [isChatOpen, setIsChatOpen] = useState(false); // Domyślnie zamknięty
             const chatEndRef = useRef(null);
 
             // Password state
@@ -219,8 +220,8 @@
             // Refs do śledzenia zmian
             const prevPlayersLength = useRef(0);
             const prevSelectionsRef = useRef({});
-            const lastChatLength = useRef(0); // To track new messages specifically
-            const isFirstSync = useRef(true); // To prevent spam on load
+            const lastChatLength = useRef(0); 
+            const isFirstSync = useRef(true);
 
             // 1. Auth Logic
             useEffect(() => {
@@ -269,7 +270,6 @@
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         
-                        // Merge logic to handle array correctly
                         setGameState(prev => ({
                             ...DEFAULT_STATE, 
                             ...data,
@@ -281,7 +281,6 @@
                             lastChatLength.current = (data.chatMessages || []).length;
                             isFirstSync.current = false;
                         } else {
-                            // Check for new chat messages
                             const msgs = data.chatMessages || [];
                             if (msgs.length > lastChatLength.current) {
                                 const newMsgs = msgs.slice(lastChatLength.current);
@@ -294,7 +293,6 @@
                             }
                         }
 
-                        // Automatyczne usuwanie (Kick)
                         if (data.players && data.players.length > 0) {
                              const amIInList = data.players.find(p => p.id === user.uid);
                              if (!amIInList && !data.isDraftStarted) {
@@ -310,11 +308,10 @@
                 return () => unsub();
             }, [user, isJoined, roomName, localName]);
 
-            // 3. Powiadomienia: Nowy Gracz + Wybory Rywali
+            // 3. Notifications
             useEffect(() => {
                 if (!user || !isJoined) return;
 
-                // A. Nowy gracz
                 const isHost = user.uid === gameState.hostId;
                 const currentCount = gameState.players ? gameState.players.length : 0;
                 if (isHost && currentCount > prevPlayersLength.current && prevPlayersLength.current > 0) {
@@ -322,7 +319,6 @@
                 }
                 prevPlayersLength.current = currentCount;
 
-                // B. Wybory innych graczy
                 const currentSelections = gameState.selections || {};
                 const prevSelections = prevSelectionsRef.current;
                 const currentKeys = Object.keys(currentSelections);
@@ -348,10 +344,10 @@
 
             // Auto scroll chat
             useEffect(() => {
-                if (showChat && chatEndRef.current) {
+                if (isChatOpen && chatEndRef.current) {
                     chatEndRef.current.scrollIntoView({ behavior: "smooth" });
                 }
-            }, [gameState.chatMessages, showChat]);
+            }, [gameState.chatMessages, isChatOpen]);
 
             // Logika
             const turnOrder = useMemo(() => {
@@ -395,7 +391,6 @@
                         chatMessages: window.arrayUnion(newMessage)
                     });
                     setChatInput("");
-                    if (!showChat) setShowChat(true); // Auto open on send
                 } catch (e) {
                     console.error("Chat send error:", e);
                 }
@@ -407,8 +402,6 @@
 
                 // BASIC SECURITY (CLIENT-SIDE)
                 if (localName.trim().toLowerCase() === "dawid") {
-                    // Zabezpieczenie: hasło 'admin69' zakodowane w Base64 to 'YWRtaW42OQ=='
-                    // Dzięki temu "kolega" nie zobaczy hasła wprost w if-ie.
                     if (btoa(adminPassword) !== "YWRtaW42OQ==") {
                         alert("Niepoprawne hasło dla nicku Dawid!");
                         return;
@@ -484,7 +477,6 @@
             const selectJumper = async (jumper) => {
                 if (!isMyTurn || gameState.selections[jumper.id]) return;
                 
-                // Deep copy logic safe for history
                 const currentSelections = { ...gameState.selections };
                 const newHistory = [...gameState.history, {
                     selections: currentSelections,
@@ -510,7 +502,6 @@
                 const lastState = gameState.history[gameState.history.length - 1];
                 const newHistory = gameState.history.slice(0, -1);
                 
-                // Force replace selections to ensure UI updates properly
                 await updateState({
                     selections: lastState.selections,
                     currentTurnIndex: lastState.currentTurnIndex,
@@ -555,13 +546,11 @@
                 return INITIAL_JUMPERS.filter(j => j.name.toLowerCase().includes(lower) || j.country.toLowerCase().includes(lower));
             };
 
-            // --- HELPER DO PANELU STATUSU ---
+            // --- HELPER: STATUS PANEL ---
             const renderStatusPanel = (className) => {
                 if (isDraftComplete) return null;
 
                 let statusMessage = isMyTurn ? "✅ TWOJA KOLEJ! Wybierz 1 zawodnika" : "";
-                
-                // Precyzyjne sprawdzanie logiki Snake Draft (double pick)
                 if (isMyTurn) {
                     const currentIndex = gameState.currentTurnIndex;
                     const nextOwnerId = (currentIndex + 1 < turnOrder.length) ? turnOrder[currentIndex + 1] : null;
@@ -591,7 +580,7 @@
                 );
             };
 
-            // --- TOAST CONTAINER COMPONENT ---
+            // --- HELPER: TOASTS ---
             const ToastContainer = () => (
                 <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
                     {toasts.map(toast => {
@@ -609,6 +598,46 @@
                 </div>
             );
 
+            // --- HELPER: CHAT WIDGET ---
+            const renderChatWidget = () => {
+                if (!isJoined) return null;
+                return (
+                    <div className={`fixed bottom-0 right-0 md:right-4 z-50 w-full md:w-80 bg-white shadow-2xl border-t md:border border-gray-300 md:rounded-t-xl flex flex-col transition-all duration-300 ${isChatOpen ? 'h-auto' : 'h-10'}`}>
+                        <div onClick={() => setIsChatOpen(!isChatOpen)} className="bg-blue-600 text-white px-4 h-10 flex justify-between items-center cursor-pointer md:rounded-t-xl hover:bg-blue-700 select-none">
+                            <span className="font-bold text-sm flex items-center gap-2"><IconMessage /> Pokaż Czat 💬</span>
+                            <span className="text-xs transform transition-transform duration-300" style={{ transform: isChatOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▲</span>
+                        </div>
+                        
+                        {isChatOpen && (
+                            <div className="flex flex-col bg-slate-50 border-t border-gray-200">
+                                <div className="h-32 md:h-48 overflow-y-auto p-3 chat-history text-sm flex flex-col gap-2">
+                                    {(gameState.chatMessages || []).map((msg, i) => (
+                                        <div key={msg.id || i} className="bg-white p-2 rounded border border-gray-100 shadow-sm">
+                                            <span className="font-bold text-slate-700 text-xs block">{msg.author}</span>
+                                            <span className="text-slate-600">{msg.text}</span>
+                                        </div>
+                                    ))}
+                                    {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
+                                    <div ref={chatEndRef} />
+                                </div>
+                                <form onSubmit={sendChat} className="p-2 bg-white border-t border-gray-200 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={chatInput} 
+                                        onChange={e => setChatInput(e.target.value)} 
+                                        placeholder="Wpisz..." 
+                                        className="flex-1 border rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 font-bold">
+                                        <IconSend />
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
 
             // --- RENDER ---
             if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="loader"></div></div>;
@@ -620,12 +649,6 @@
                             <h1 className="text-4xl mb-4">⛷️</h1>
                             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dołącz do Gry</h2>
                             
-                            {(!window.appId || window.appId === 'default-app-id') && typeof __firebase_config === 'undefined' && (
-                                <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 text-sm rounded">
-                                    <b>Uwaga:</b> Skonfiguruj Firebase w pliku HTML, aby gra działała.
-                                </div>
-                            )}
-
                             <div className="space-y-4">
                                 <input className="w-full p-3 border rounded-lg" placeholder="Twój Nick" value={localName} onChange={e => setLocalName(e.target.value)} />
                                 
@@ -633,7 +656,7 @@
                                     <input 
                                         type="password"
                                         className="w-full p-3 border rounded-lg border-red-300 bg-red-50 focus:ring-red-500 focus:border-red-500 transition-colors"
-                                        placeholder="Podaj hasło (admin69)" 
+                                        placeholder="Podaj hasło" 
                                         value={adminPassword} 
                                         onChange={e => setAdminPassword(e.target.value)} 
                                     />
@@ -686,41 +709,7 @@
                             )}
                         </div>
                         
-                        {/* CHAT BAR LOBBY */}
-                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
-                             {showChat && (
-                                <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
-                                    {(gameState.chatMessages || []).map((msg, i) => (
-                                        <div key={msg.id || i} className="mb-2 text-sm">
-                                            <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
-                                        </div>
-                                    ))}
-                                    {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
-                                    <div ref={chatEndRef} />
-                                </div>
-                            )}
-                            <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
-                                <button 
-                                    onClick={() => setShowChat(!showChat)} 
-                                    className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                                    title={showChat ? "Ukryj czat" : "Pokaż czat"}
-                                >
-                                    <IconMessage />
-                                </button>
-                                <form onSubmit={sendChat} className="flex-1 flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={chatInput} 
-                                        onChange={e => setChatInput(e.target.value)} 
-                                        placeholder="Napisz wiadomość..." 
-                                        className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
-                                    />
-                                    <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
-                                        <IconSend />
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
+                        {renderChatWidget()}
                     </div>
                 );
             }
@@ -763,42 +752,8 @@
                                 })}
                             </div>
                         </div>
-                         
-                        {/* CHAT BAR SUMMARY */}
-                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
-                             {showChat && (
-                                <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
-                                    {(gameState.chatMessages || []).map((msg, i) => (
-                                        <div key={msg.id || i} className="mb-2 text-sm">
-                                            <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
-                                        </div>
-                                    ))}
-                                    {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
-                                    <div ref={chatEndRef} />
-                                </div>
-                            )}
-                            <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
-                                <button 
-                                    onClick={() => setShowChat(!showChat)} 
-                                    className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                                    title={showChat ? "Ukryj czat" : "Pokaż czat"}
-                                >
-                                    <IconMessage />
-                                </button>
-                                <form onSubmit={sendChat} className="flex-1 flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={chatInput} 
-                                        onChange={e => setChatInput(e.target.value)} 
-                                        placeholder="Napisz wiadomość..." 
-                                        className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
-                                    />
-                                    <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
-                                        <IconSend />
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
+                        
+                        {renderChatWidget()}
                     </div>
                 );
             }
@@ -918,41 +873,7 @@
                         </div>
                     </div>
 
-                     {/* CHAT BAR IN GAME */}
-                     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 chat-bar">
-                         {showChat && (
-                            <div className="w-full max-w-7xl mx-auto h-48 bg-slate-50 border-b p-4 overflow-y-auto chat-history">
-                                {(gameState.chatMessages || []).map((msg, i) => (
-                                    <div key={msg.id || i} className="mb-2 text-sm">
-                                        <span className="font-bold text-slate-700">{msg.author}:</span> <span className="text-slate-600">{msg.text}</span>
-                                    </div>
-                                ))}
-                                {(gameState.chatMessages || []).length === 0 && <div className="text-gray-400 text-center italic text-xs mt-4">Tu pojawi się historia czatu...</div>}
-                                <div ref={chatEndRef} />
-                            </div>
-                        )}
-                        <div className="p-3 w-full max-w-7xl mx-auto flex gap-2 items-center">
-                            <button 
-                                onClick={() => setShowChat(!showChat)} 
-                                className={`p-2 rounded-full transition-colors ${showChat ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                                title={showChat ? "Ukryj czat" : "Pokaż czat"}
-                            >
-                                <IconMessage />
-                            </button>
-                            <form onSubmit={sendChat} className="flex-1 flex gap-2">
-                                <input 
-                                    type="text" 
-                                    value={chatInput} 
-                                    onChange={e => setChatInput(e.target.value)} 
-                                    placeholder="Napisz wiadomość..." 
-                                    className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
-                                />
-                                <button type="submit" className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
-                                    <IconSend />
-                                </button>
-                            </form>
-                        </div>
-                    </div>
+                    {renderChatWidget()}
 
                 </div>
             );
